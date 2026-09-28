@@ -1,1 +1,30 @@
 temp/*
+
+# Nix / direnv
+result
+result-*
+.direnv/
+.envrc
+
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+# ESPHome
+.esphome/
+secrets.yaml
+
+# Python / HA tests
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Device dumps, logs and keys: never commit
+backups/
+*.dump
+*.pem
+*.key
