@@ -549,7 +549,7 @@ restarts, packet loss, and a soak test.
 | 2 Bring-up | Mostly done. Ethernet works (100 Mbps full duplex, DHCP, 0% loss at 1400 B pings). The ESP-NOW spike works: the P4 configures the C6 radio over `sb_link`; broadcast is delivered; unicast to an absent peer correctly fails; LMK peers work; 1000 frames at 377 frames/s with 0 drops using credit pacing; the radio is reconfigured after a C6 restart. Cable pull verified (link down detected, re-up 100 Mbps, same DHCP IP 1 s later, no reboot). Open items: 24 h soak (`scripts/soak.sh`), RX test with a second ESP32. |
 | 3 Protocol | Frozen: `docs/PROTOCOL.md` and `docs/SECURITY.md`. C and Python codecs, golden vectors, differential tests and fuzzing are all in CI. |
 | 4 C6 coprocessor | Software path functional on ESP-Hosted 3.0.9: fixed-channel ESP-NOW, bounded peer-data transport, send results, peer add/remove with LMKs, credit pacing, health counters, restart recovery, and P4-driven C6 updates. Exit-gate hardware work remains: receive/application-ACK test with a real node, overload/backpressure measurement, and 24 h soak. In-place C6 recovery without a P4 restart remains a follow-up. |
-| 5 P4 hub/API | In progress. The hub core, P4/C6 bridge, dedicated `hub_nvs`, persistent TLS identity, local first-claim credential, authenticated HTTPS/WebSocket API, targeted node administration, snapshots, and 64-event resume stream are implemented. Host tests run under ASan/UBSan and `nix flake check`. Remaining Phase 5 work: mDNS, broader host/API simulation, and on-device TLS/WebSocket validation. Physical-presence proof is deferred to Phase 8. |
+| 5 P4 hub/API | In progress. The hub core, P4/C6 bridge, dedicated `hub_nvs`, persistent TLS identity, local first-claim credential, authenticated HTTPS/WebSocket API, targeted node administration, snapshots, 64-event resume stream, and pinned mDNS discovery are implemented. Host tests cover the hub core plus production credential, JSON validation, and resume decisions. Remaining gate: on-device TLS/WebSocket validation and end-to-end reconnect/stream testing. Physical-presence proof is deferred to Phase 8. |
 
 ### Next work
 
@@ -560,10 +560,11 @@ restarts, packet loss, and a soak test.
   storage and the existing `sb_radio` adapter.
 - [x] Implement local first-claim commissioning and authenticated TLS WebSocket
   snapshot/update streaming.
-- [ ] Add read-only health/version/diagnostics HTTP endpoints and
+- [x] Add read-only health/version/diagnostics HTTP endpoints and
   `_server-buddy._tcp.local` mDNS advertisement.
-- [ ] Add host-simulator tests for snapshots, reconnect/resume, sequence gaps,
-  malformed clients, and authentication failures.
+- [x] Add host checks for credential rotation/authentication, malformed
+  messages, and reconnect/resume sequence gaps.
+- [ ] Exercise a full HA-facing snapshot and reconnect on hardware.
 - [ ] Complete the deferred Phase 4 hardware gates: real-node RX/application
   ACK, overload/backpressure, and the 24-hour soak.
 

@@ -1,1 +1,1 @@
-idf_component_register(SRCS "main.c" "sb_eth.c" "sb_radio.c" "sb_hub_app.c" "sb_api.c" "sb_api_tls.c" REQUIRES sb_hub sb_protocol sb_link esp_app_format esp_hosted nvs_flash esp_event esp_eth esp_netif esp_timer esp_https_server json mbedtls)
+idf_component_register(SRCS "main.c" "sb_eth.c" "sb_radio.c" "sb_hub_app.c" "sb_api.c" "sb_api_logic.c" "sb_api_tls.c" "sb_mdns.c" REQUIRES sb_hub sb_protocol sb_link esp_app_format esp_hosted nvs_flash esp_event esp_eth esp_netif esp_timer esp_https_server json mbedtls mdns)

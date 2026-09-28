@@ -57,6 +57,23 @@
         "url": "https://github.com/espressif/esp-hosted-mcu"
       }
     },
+    "esp-mdns": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789472591,
+        "narHash": "sha256-WDmHjM5UwySX5+kkVO32DgC1vfSh2p3Fabwu7EZxRxg=",
+        "owner": "espressif",
+        "repo": "esp-protocols",
+        "rev": "d61a590e07e0df4c66e7ac43feeceb0f1e0866f9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "espressif",
+        "ref": "mdns-v1.13.1",
+        "repo": "esp-protocols",
+        "type": "github"
+      }
+    },
     "esp-wifi-remote": {
       "flake": false,
       "locked": {
@@ -129,6 +146,7 @@
         "esp-dev": "esp-dev",
         "esp-hosted": "esp-hosted",
         "esp-hosted-v2": "esp-hosted-v2",
+        "esp-mdns": "esp-mdns",
         "esp-wifi-remote": "esp-wifi-remote",
         "nixpkgs": "nixpkgs_2"
       }

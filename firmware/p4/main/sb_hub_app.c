@@ -19,6 +19,8 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "sb_api.h"
+#include "sb_api_logic.h"
+#include "sb_mdns.h"
 #include "sb_hub.h"
 
 static const char *TAG = "sb_hub_app";
@@ -327,18 +329,13 @@ static void fetch_events(const sb_hub_app_api_request_t *request,
 {
     response->stream.stream_epoch = s_app.cfg.hub_boot;
     response->stream.latest_seq = s_app.event_seq;
-    if (request->stream_epoch != s_app.cfg.hub_boot || request->after_seq > s_app.event_seq) {
-        response->stream.resync_required = true;
-        return;
-    }
     uint8_t oldest = (uint8_t)((s_app.event_head + SB_HUB_APP_STREAM_CAP - s_app.event_len) %
                                SB_HUB_APP_STREAM_CAP);
-    if (s_app.event_len) {
-        uint64_t oldest_seq = s_app.events[oldest].seq;
-        if (request->after_seq < oldest_seq && oldest_seq - request->after_seq > 1) {
-            response->stream.resync_required = true;
-            return;
-        }
+    uint64_t oldest_seq = s_app.event_len ? s_app.events[oldest].seq : s_app.event_seq + 1;
+    if (!sb_api_can_resume(s_app.cfg.hub_boot, request->stream_epoch, request->after_seq,
+                           oldest_seq, s_app.event_seq)) {
+        response->stream.resync_required = true;
+        return;
     }
     for (uint8_t i = 0; i < s_app.event_len; i++) {
         const sb_hub_app_event_t *event =
@@ -484,6 +481,10 @@ esp_err_t sb_hub_app_start(const sb_radio_cfg_t *radio_cfg)
         return ESP_ERR_NO_MEM;
     if (xTaskCreate(hub_task, "sb_hub", 8192, NULL, 7, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     ESP_RETURN_ON_ERROR(sb_api_start(s_app.cfg.hub_id, s_app.cfg.hub_boot), TAG, "start API");
+    esp_err_t mdns_err = sb_mdns_start(s_app.cfg.hub_id);
+    if (mdns_err != ESP_OK)
+        ESP_LOGW(TAG, "mDNS unavailable (%s); manual host still works",
+                 esp_err_to_name(mdns_err));
     return sb_radio_start(radio_cfg, &RADIO_EVENTS);
 }
 

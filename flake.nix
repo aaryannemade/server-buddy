@@ -20,6 +20,10 @@
       url = "github:espressif/esp-wifi-remote/wifi_remote-v1.6.5";
       flake = false;
     };
+    esp-mdns = {
+      url = "github:espressif/esp-protocols/mdns-v1.13.1";
+      flake = false;
+    };
   };
 
   outputs =
@@ -30,6 +34,7 @@
       esp-hosted,
       esp-hosted-v2,
       esp-wifi-remote,
+      esp-mdns,
     }:
     let
       systems = [
@@ -95,7 +100,10 @@
             pkgs.runCommand "sb-idf-components" { } (
               "mkdir $out\n" + lib.concatLines (lib.mapAttrsToList (n: src: "ln -s ${src} $out/${n}") links)
             );
-          extraComponents = mkComponents { esp_hosted = esp-hosted; };
+          extraComponents = mkComponents {
+            esp_hosted = esp-hosted;
+            mdns = "${esp-mdns}/components/mdns";
+          };
 
           buildIdfProject =
             {
@@ -201,6 +209,29 @@
                 $TMPDIR/hubtest
                 touch $out
               '';
+
+          apiSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./firmware/p4/main/sb_api_logic.c
+              ./firmware/p4/main/sb_api_logic.h
+              ./tests/api_c
+            ];
+          };
+
+          api-c = pkgs.runCommand "api-c-asan" { nativeBuildInputs = [ pkgs.gcc ]; } ''
+            cd ${apiSrc}
+            gcc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Wpedantic -Werror \
+              -fsanitize=address,undefined -fno-sanitize-recover=all \
+              -Ifirmware/p4/main -I${lib.getDev pkgs.mbedtls}/include \
+              -I${lib.getDev pkgs.cjson}/include/cjson \
+              firmware/p4/main/sb_api_logic.c tests/api_c/test_api_logic.c \
+              -L${pkgs.mbedtls}/lib -Wl,-rpath,${pkgs.mbedtls}/lib -lmbedcrypto \
+              -L${pkgs.cjson}/lib -Wl,-rpath,${pkgs.cjson}/lib -lcjson \
+              -o $TMPDIR/test_api
+            $TMPDIR/test_api
+            touch $out
+          '';
 
           # ---- protocol v1 host tests
           protocolSrc = lib.fileset.toSource {
@@ -315,6 +346,7 @@
               protocol-c
               protocol-fuzz
               hub-c
+              api-c
               ;
 
             nix-format = pkgs.runCommand "nix-format" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''

@@ -3,6 +3,9 @@
 The P4 exposes a TLS-only API on port 443 while Ethernet owns an IP address.
 The certificate is a persistent, self-signed ECDSA P-256 identity stored in
 the dedicated `hub_nvs` partition.
+The P4 advertises `_server-buddy._tcp.local` on port 443 with `id`, `model`,
+`api`, and `radio_protocol` TXT fields. Use the hub IP/hostname manually if
+mDNS is unavailable.
 
 ## HTTP Endpoints
 

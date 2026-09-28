@@ -24,21 +24,20 @@
 #include "mbedtls/sha256.h"
 #include "nvs.h"
 #include "sb_api_tls.h"
+#include "sb_api_logic.h"
 #include "sb_eth.h"
 #include "sb_hub_app.h"
 
 #define API_CRED_KEY "credential"
-#define API_CRED_LEN 44U
-#define API_CRED_VERSION 1U
+#define API_CRED_LEN SB_API_CRED_LEN
 #define API_TOKEN_BYTES 32U
-#define API_TOKEN_LEN 43U
-#define API_MAX_INBOUND 2048U
+#define API_TOKEN_LEN SB_API_TOKEN_LEN
+#define API_MAX_INBOUND SB_API_MAX_INBOUND
 #define API_MAX_OUTBOUND 16384U
 #define API_LIVE_PERIOD_MS 250U
 #define API_START_RETRY_MS 5000U
 
 static const char *TAG = "sb_api";
-static const uint8_t CRED_MAGIC[4] = {'S', 'B', 'A', 'C'};
 
 typedef enum { API_IP_UP = 1, API_IP_DOWN = 2 } api_ip_event_t;
 
@@ -78,32 +77,6 @@ typedef struct {
 
 static api_state_t s_api;
 
-static uint32_t get_u32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
-           ((uint32_t)p[3] << 24);
-}
-
-static void put_u32(uint8_t *p, uint32_t value)
-{
-    p[0] = (uint8_t)value;
-    p[1] = (uint8_t)(value >> 8);
-    p[2] = (uint8_t)(value >> 16);
-    p[3] = (uint8_t)(value >> 24);
-}
-
-static void sha256(const void *data, size_t len, uint8_t out[32])
-{
-    mbedtls_sha256((const unsigned char *)data, len, out, 0);
-}
-
-static bool constant_time_equal(const uint8_t *a, const uint8_t *b, size_t len)
-{
-    uint8_t difference = 0;
-    for (size_t i = 0; i < len; i++) difference |= a[i] ^ b[i];
-    return difference == 0;
-}
-
 static void base64url(const uint8_t *in, size_t len, char *out)
 {
     static const char alphabet[] =
@@ -134,12 +107,9 @@ static esp_err_t load_credential(void)
     esp_err_t err = nvs_get_blob(s_api.nvs, API_CRED_KEY, record, &len);
     if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
     if (err != ESP_OK) return err;
-    if (len != sizeof record || memcmp(record, CRED_MAGIC, sizeof CRED_MAGIC) != 0 ||
-        get_u32(record + 4) != API_CRED_VERSION || get_u32(record + 8) == 0)
+    if (!sb_api_credential_decode(record, len, &s_api.generation, s_api.token_hash))
         return ESP_ERR_INVALID_VERSION;
     s_api.claimed = true;
-    s_api.generation = get_u32(record + 8);
-    memcpy(s_api.token_hash, record + 12, sizeof s_api.token_hash);
     return ESP_OK;
 }
 
@@ -152,11 +122,11 @@ static esp_err_t store_new_credential(char token[API_TOKEN_LEN + 1])
     if (generation == 0) generation = 1;
     esp_fill_random(random, sizeof random);
     base64url(random, sizeof random, token);
-    sha256(token, API_TOKEN_LEN, hash);
-    memcpy(record, CRED_MAGIC, sizeof CRED_MAGIC);
-    put_u32(record + 4, API_CRED_VERSION);
-    put_u32(record + 8, generation);
-    memcpy(record + 12, hash, sizeof hash);
+    if (!sb_api_credential_encode(generation, token, record, hash)) {
+        mbedtls_platform_zeroize(random, sizeof random);
+        mbedtls_platform_zeroize(token, API_TOKEN_LEN + 1);
+        return ESP_FAIL;
+    }
 
     esp_err_t err = nvs_set_blob(s_api.nvs, API_CRED_KEY, record, sizeof record);
     if (err == ESP_OK) err = nvs_commit(s_api.nvs);
@@ -175,13 +145,7 @@ static esp_err_t store_new_credential(char token[API_TOKEN_LEN + 1])
 
 static bool authenticate_token(const char *token)
 {
-    uint8_t hash[32];
-    size_t len = token ? strnlen(token, API_TOKEN_LEN + 1) : 0;
-    if (!s_api.claimed || len != API_TOKEN_LEN) return false;
-    sha256(token, len, hash);
-    bool valid = constant_time_equal(hash, s_api.token_hash, sizeof hash);
-    mbedtls_platform_zeroize(hash, sizeof hash);
-    return valid;
+    return s_api.claimed && sb_api_credential_verify(token, s_api.token_hash);
 }
 
 static bool request_authenticated(httpd_req_t *req)
@@ -786,17 +750,10 @@ static esp_err_t websocket_handler(httpd_req_t *req)
         return send_json_ws(req, error_json(NULL, "json_text_required"));
     }
 
-    const char *parse_end = NULL;
-    cJSON *root = cJSON_ParseWithLengthOpts((const char *)payload, frame.len, &parse_end, false);
-    const char *payload_end = (const char *)payload + frame.len;
-    while (parse_end && parse_end < payload_end &&
-           (*parse_end == ' ' || *parse_end == '\t' || *parse_end == '\r' || *parse_end == '\n'))
-        parse_end++;
-    bool complete = parse_end == payload_end;
+    cJSON *root = sb_api_parse_request(payload, frame.len);
     mbedtls_platform_zeroize(payload, frame.len);
     free(payload);
-    if (!complete || !cJSON_IsObject(root)) {
-        cJSON_Delete(root);
+    if (!root) {
         return send_json_ws(req, error_json(NULL, "invalid_json"));
     }
     const cJSON *op_item = cJSON_GetObjectItemCaseSensitive(root, "op");
