@@ -1,4 +1,4 @@
-// Phase 2 bring-up: Ethernet (DHCP) + P4/C6 versions over ESP-Hosted.
+// Server Buddy P4: Ethernet, ESP-Hosted transport, and serialized hub core.
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_event.h"
@@ -10,7 +10,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "sb_eth.h"
-#include "sb_radio.h"
+#include "sb_hub_app.h"
 #include "sb_crypto.h"
 #include "sb_protocol.h"
 
@@ -87,15 +87,17 @@ void app_main(void)
     log_p4();
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_ERROR_CHECK(nvs_flash_erase()); // hub registry uses a separate partition
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(sb_eth_start("server-buddy"));
     probe_c6();
-    // Spike default: world-safe domain, channel 1. Configurable in Phase 5.
+    // Initial production default: world-safe domain, fixed channel 1.
     const sb_radio_cfg_t radio = {.channel = 1, .country = "01"};
-    ESP_ERROR_CHECK(sb_radio_start(&radio));
+    err = sb_hub_app_start(&radio);
+    if (err != ESP_OK)
+        ESP_LOGE(TAG, "hub disabled (recovery mode): %s", esp_err_to_name(err));
     xTaskCreate(health_task, "sb_health", 3072, NULL, 3, NULL);
 }

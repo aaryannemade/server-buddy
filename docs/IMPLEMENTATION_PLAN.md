@@ -337,9 +337,8 @@ Exit gate:
    registry, router, storage, API, diagnostics, and update management.
 2. Persist configuration and registry metadata in versioned NVS records.
    Retain live values in RAM and checkpoint only when necessary.
-3. Implement the frozen pairing design with a timed window initiated by a
-   physical action or an authenticated HA command. Unknown devices are ignored
-   outside that window.
+3. Implement the frozen pairing design with a timed window initiated by an
+   authenticated HA command. Unknown devices are ignored outside that window.
 4. Implement an authenticated WebSocket endpoint for HA:
    - protocol/server hello and authentication;
    - full registry/state snapshot;
@@ -352,18 +351,18 @@ Exit gate:
    stable hub ID, but no secrets.
 7. Define bounded queues and backpressure between every subsystem. Event bursts
    must not block the C6 receive path or Ethernet task.
-8. Define first commissioning: a physical-presence action creates a short-lived
-   one-time code; the HA config flow exchanges it for a rotatable hub credential.
-   Document token rotation, revocation, and recovery when HA loses credentials.
-   Use TLS by default, or use a reviewed challenge-response exchange that never
-   sends a reusable bearer secret in plaintext.
+8. For the trusted local Phase 5 deployment, allow the first HA client to claim
+   an uncommissioned hub and receive a rotatable credential over TLS. Document
+   the accepted LAN first-claim race. Physical-presence proof, fingerprint
+   verification, and protected credential recovery move to Phase 8.
 
 Exit gate:
 
 - a host simulator can create nodes/entities and stream states/events;
 - restart restores registry and sends a coherent snapshot;
 - disconnect/reconnect and sequence-gap recovery are deterministic;
-- malformed and unauthenticated network clients cannot affect the radio.
+- after commissioning, malformed and unauthenticated network clients cannot
+  affect the radio.
 
 ### Phase 6: Home Assistant custom integration
 
@@ -442,12 +441,15 @@ retrofitting security.
 3. Audit replay protection, session/key epochs, receive windows, and revocation.
 4. Audit HA TLS or challenge-response authentication, credential rotation, and
    certificate provisioning where applicable.
-5. Enable signed firmware and secure boot/flash encryption only after the
+5. Replace local first-claim commissioning with physical-presence or equivalent
+   owner proof. Add fingerprint verification, claim-race rejection, credential
+   revocation, and recovery when HA loses its credential.
+6. Enable signed firmware and secure boot/flash encryption only after the
    development and physical recovery processes are mature. These settings can
    be irreversible when eFuses are burned.
-6. Implement signed P4 OTA with rollback. Treat P4, C6, and protocol versions as
+7. Implement signed P4 OTA with rollback. Treat P4, C6, and protocol versions as
    a compatibility matrix; never update the C6 blindly.
-7. Add a release manifest, hashes/signatures, migration tests, and power-loss
+8. Add a release manifest, hashes/signatures, migration tests, and power-loss
    tests at every update boundary.
 
 Exit gate:
@@ -543,9 +545,27 @@ restarts, packet loss, and a soak test.
 | Phase | Status |
 | --- | --- |
 | 0 Flake | Done. `nix flake check` builds P4 offline and runs all tests. |
-| 1 Backups | P4 inventoried (v1.3 silicon, no security eFuses). Backups waived by owner; old firmware erased. C6 not yet read. |
+| 1 Inventory/recovery | Closed for the current hardware. P4 and C6 identities, firmware, wiring, and recovery paths are documented. Flash backups were waived by the owner before the old firmware was erased. |
 | 2 Bring-up | Mostly done. Ethernet works (100 Mbps full duplex, DHCP, 0% loss at 1400 B pings). The ESP-NOW spike works: the P4 configures the C6 radio over `sb_link`; broadcast is delivered; unicast to an absent peer correctly fails; LMK peers work; 1000 frames at 377 frames/s with 0 drops using credit pacing; the radio is reconfigured after a C6 restart. Cable pull verified (link down detected, re-up 100 Mbps, same DHCP IP 1 s later, no reboot). Open items: 24 h soak (`scripts/soak.sh`), RX test with a second ESP32. |
 | 3 Protocol | Frozen: `docs/PROTOCOL.md` and `docs/SECURITY.md`. C and Python codecs, golden vectors, differential tests and fuzzing are all in CI. |
+| 4 C6 coprocessor | Software path functional on ESP-Hosted 3.0.9: fixed-channel ESP-NOW, bounded peer-data transport, send results, peer add/remove with LMKs, credit pacing, health counters, restart recovery, and P4-driven C6 updates. Exit-gate hardware work remains: receive/application-ACK test with a real node, overload/backpressure measurement, and 24 h soak. In-place C6 recovery without a P4 restart remains a follow-up. |
+| 5 P4 hub/API | In progress. The hub core, P4/C6 bridge, dedicated `hub_nvs`, persistent TLS identity, local first-claim credential, authenticated HTTPS/WebSocket API, targeted node administration, snapshots, and 64-event resume stream are implemented. Host tests run under ASan/UBSan and `nix flake check`. Remaining Phase 5 work: mDNS, broader host/API simulation, and on-device TLS/WebSocket validation. Physical-presence proof is deferred to Phase 8. |
+
+### Next work
+
+- [x] Implement and independently review the platform-independent hub core.
+- [x] Add host coverage for pairing rollback, persistence failures, replay,
+  schema replacement/timeouts, typed state, event dedupe, and availability.
+- [x] Integrate `sb_hub` into the P4 application using dedicated, versioned NVS
+  storage and the existing `sb_radio` adapter.
+- [x] Implement local first-claim commissioning and authenticated TLS WebSocket
+  snapshot/update streaming.
+- [ ] Add read-only health/version/diagnostics HTTP endpoints and
+  `_server-buddy._tcp.local` mDNS advertisement.
+- [ ] Add host-simulator tests for snapshots, reconnect/resume, sequence gaps,
+  malformed clients, and authentication failures.
+- [ ] Complete the deferred Phase 4 hardware gates: real-node RX/application
+  ACK, overload/backpressure, and the 24-hour soak.
 
 Deviations from the original plan:
 
@@ -572,7 +592,8 @@ Deviations from the original plan:
 - Node chips: ESP32-C3, ESP32-S3, ESP32-C6. No ESP8266.
 - v1 is receive-only; `COMMAND` is reserved, not implemented.
 - Entity types: sensor, binary sensor, text sensor, event.
-- Pairing: hub button or authenticated HA action opens a timed window.
+- Pairing: an authenticated HA action opens a timed window. Physical-button
+  authorization is deferred to Phase 8.
 - HA and hub share one L2 network; mDNS discovery, manual host as fallback.
 - No MQTT in v1; native HA integration only.
 

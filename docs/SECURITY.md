@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Passive radio listener | yes | Learns only metadata (MACs, timing, key ID). |
 | Active radio attacker (inject, replay, spoof MAC) | yes | Must not create entities, forge states/events, or replay events. |
-| LAN attacker (sniff, MITM, spoof mDNS, race commissioning) | yes | See commissioning. |
+| LAN attacker (sniff, MITM, spoof mDNS, race commissioning) | partial | Authenticated sessions are in scope; first-claim race protection is deferred to Phase 8. |
 | Physical access to a node | partial | Exposes only that node's key. |
 | Physical access to the hub | no | Owner-equivalent until flash/NVS encryption (Phase 8). |
 | RF jamming / radio DoS | no | Detected via availability, not prevented. |
@@ -41,11 +41,10 @@
 
 ## Pairing (mutual proof of `K_node`)
 
-Pairing is **targeted**. Adding a node in HA opens a 120 s window for that new
-key. A hub button short press opens a window for all keys that have never
-paired. Re-pairing an enrolled node requires an explicit HA action for that
-node. Requests for any other key ID are ignored, so replayed requests cannot
-disturb running nodes. Only one pairing is in progress at a time.
+Pairing is **targeted**. Adding a node in authenticated HA opens a 120 s window
+for that new key. Re-pairing an enrolled node requires an explicit HA action
+for that node. Requests for any other key ID are ignored, so replayed requests
+cannot disturb running nodes. Only one pairing is in progress at a time.
 
 1. The node uses its configured fixed channel (same as the hub's). It
    broadcasts `PAIR_REQUEST{key_id, node_mac, node_nonce[16], tag}` with
@@ -99,21 +98,19 @@ comes from the HMAC tags. All tag/MIC comparisons are constant time.
 
 - The P4 generates an ECDSA P-256 key and self-signed certificate on first
   boot. The API is TLS-only (WSS/HTTPS).
-- **Commissioning** needs physical confirmation:
-  1. The HA config flow connects and requests commissioning. It shows the
-     certificate fingerprint, which the hub also prints on its serial console.
-  2. The hub holds the request as pending for 60 s and blinks its status LED
-     (if present).
-  3. A hub button press confirms. The hub issues a 256-bit random token to
-     that session only and stores just `SHA-256(token)`.
-  4. If more than one commissioning request is pending, all are rejected, so
-     a racing LAN attacker causes a visible failure and never gets a silent
-     grant.
+- **Initial commissioning (Phase 5 local mode)**: while no HA credential
+  exists, the first client on the local network may claim the hub through the
+  HA config flow. The hub issues a 256-bit random token to that TLS session and
+  stores only `SHA-256(token)`. No button, one-time code, or fingerprint check
+  is required in this mode.
+- This intentionally accepts a first-claim race from another device on the
+  same LAN. It is suitable for the current trusted local deployment, but does
+  not satisfy the production security gate.
 - Every session uses the pinned fingerprint plus the token. HA can rotate the
-  token over the authenticated channel. A 10 s button hold revokes all HA
-  tokens.
-- Remaining risk: a LAN MITM present during commissioning, unless the user
-  compares the fingerprint with the serial console.
+  token over the authenticated channel.
+- Phase 8 adds physical-presence or equivalent owner proof, fingerprint
+  verification, claim-race handling, and a credential-revocation recovery
+  path before production release.
 
 ## Lifecycle
 
@@ -121,8 +118,8 @@ comes from the HMAC tags. All tag/MIC comparisons are constant time.
 | --- | --- |
 | Remove node in HA | Hub deletes the peer, key and counters; the node's frames are rejected. |
 | Lost or compromised node key | Remove the node, add it again (new key), reflash the node. |
-| HA credentials lost | Re-run the config flow with button confirmation. |
-| Hub factory reset | Serial `factory-reset` or 30 s button hold: erases NVS keys, TLS key and registry. Nodes must be re-added. |
+| HA credentials lost | Development recovery explicitly erases the HA credential; a protected owner-recovery flow is deferred to Phase 8. |
+| Hub factory reset | Explicit serial/flashing-tool reset erases hub NVS. A physical recovery action is deferred to Phase 8. |
 | Node factory reset or reflash | Boot counter restarts; HA re-pair action (new epoch). |
 
 ## Insecure development mode
@@ -134,5 +131,6 @@ integration raises a repair issue. This mode can never pass a release gate.
 
 ## Deferred to Phase 8
 
-Secure boot, flash and NVS encryption, signed OTA, and key rotation without
-re-pairing.
+Physical-presence commissioning, first-claim race protection, credential
+revocation/recovery, secure boot, flash and NVS encryption, signed OTA, and key
+rotation without re-pairing.

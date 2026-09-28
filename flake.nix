@@ -124,6 +124,7 @@
                 runHook preBuild
                 export HOME=$TMPDIR/home
                 mkdir -p $HOME
+                rm -rf build
                 export IDF_COMPONENT_MANAGER=0
                 export SB_EXTRA_COMPONENTS=${components}
                 export ESP_IDF_VERSION=${lib.removePrefix "v" (lib.versions.majorMinor (lib.removePrefix "v" idfRev))}
@@ -174,6 +175,33 @@
             preBuild = c6ImageHook;
           };
 
+          # ---- hub core host tests (fake platform + simulated node)
+          hubSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./protocol
+              ./firmware/components/sb_protocol
+              ./firmware/components/sb_hub
+              ./tests/protocol_c
+              ./tests/hub_c
+            ];
+          };
+
+          hub-c =
+            pkgs.runCommand "hub-c-asan"
+              {
+                nativeBuildInputs = [ pkgs.gcc ];
+              }
+              ''
+                cd ${hubSrc}
+                gcc ${cFlags} -Wno-unused-parameter -fsanitize=address,undefined -fno-sanitize-recover=all \
+                  firmware/components/sb_protocol/*.c firmware/components/sb_hub/*.c tests/hub_c/test_hub.c \
+                  -L${pkgs.mbedtls}/lib -Wl,-rpath,${pkgs.mbedtls}/lib -lmbedcrypto -lm \
+                  -o $TMPDIR/hubtest
+                $TMPDIR/hubtest
+                touch $out
+              '';
+
           # ---- protocol v1 host tests
           protocolSrc = lib.fileset.toSource {
             root = ./.;
@@ -185,7 +213,7 @@
           };
           protocolPython = pkgs.python3.withPackages (ps: [ ps.pytest ]);
           sbSources = "firmware/components/sb_protocol";
-          cFlags = "-std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror -I${sbSources}/include -I${lib.getDev pkgs.mbedtls}/include";
+          cFlags = "-std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror -I${sbSources}/include -Ifirmware/components/sb_hub/include -I${lib.getDev pkgs.mbedtls}/include";
 
           protocol-python =
             pkgs.runCommand "protocol-python"
@@ -286,6 +314,7 @@
               p4-c6-updater-legacy
               protocol-c
               protocol-fuzz
+              hub-c
               ;
 
             nix-format = pkgs.runCommand "nix-format" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''

@@ -22,7 +22,7 @@
 
 static const char *TAG = "sb_c6";
 
-enum { EV_CMD, EV_RX, EV_SEND_DONE };
+enum { EV_CMD, EV_RX };
 
 typedef struct {
     uint8_t kind;
@@ -36,13 +36,12 @@ typedef struct {
 } item_t;
 
 #define QUEUE_LEN 32
-#define TOKENS 16
-
 static QueueHandle_t s_q;
+static TaskHandle_t s_worker;
 static bool s_radio_up;
 static sb_link_status_t s_st = {.ver = SB_LINK_VERSION};
-static uint32_t s_tokens[TOKENS];
-static unsigned s_tok_head, s_tok_tail; // FIFO: send callbacks arrive in send order
+static uint8_t s_sent_mac[6];
+static bool s_sent_ok;
 
 static void enqueue(const item_t *it)
 {
@@ -72,9 +71,9 @@ static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int le
 
 static void on_sent(const esp_now_send_info_t *info, esp_now_send_status_t status)
 {
-    item_t it = {.kind = EV_SEND_DONE, .ok = status == ESP_NOW_SEND_SUCCESS};
-    memcpy(it.mac, info->des_addr, 6);
-    enqueue(&it);
+    memcpy(s_sent_mac, info->des_addr, 6);
+    s_sent_ok = status == ESP_NOW_SEND_SUCCESS;
+    xTaskNotifyGive(s_worker);
 }
 
 static void on_host_msg(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
@@ -94,9 +93,9 @@ static void send_host(uint32_t id, const void *p, size_t n)
     if (err != ESP_OK) ESP_LOGW(TAG, "to P4 0x%08" PRIx32 " failed: %s", id, esp_err_to_name(err));
 }
 
-static void result(uint32_t req, esp_err_t err)
+static void result(uint32_t req, uint32_t token, esp_err_t err)
 {
-    sb_link_result_t r = {.ver = SB_LINK_VERSION, .req_id = req, .err = err};
+    sb_link_result_t r = {.ver = SB_LINK_VERSION, .req_id = req, .token = token, .err = err};
     send_host(SB_LINK_C2H_RESULT, &r, sizeof r);
 }
 
@@ -148,18 +147,25 @@ static esp_err_t radio_config(const sb_link_config_t *c)
     return actual == c->channel ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
-static esp_err_t do_send(const item_t *it)
+static esp_err_t do_send(const item_t *it, sb_link_send_done_t *done)
 {
     if (!s_radio_up) return ESP_ERR_INVALID_STATE;
     const sb_link_send_t *s = (const sb_link_send_t *)it->data;
-    if (it->len < sizeof *s || s->len == 0 || s->len > SB_LINK_MAX_FRAME ||
+    if (it->len < sizeof *s || s->ver != SB_LINK_VERSION || s->len == 0 ||
+        s->len > SB_LINK_MAX_FRAME ||
         it->len != sizeof *s + s->len)
         return ESP_ERR_INVALID_SIZE;
-    if ((s_tok_head - s_tok_tail) >= TOKENS) return ESP_ERR_NO_MEM;
     esp_err_t err = esp_now_send(s->mac, s->data, s->len);
     if (err == ESP_OK) {
-        s_tokens[s_tok_head++ % TOKENS] = s->token;
         s_st.tx++;
+        // ESP-IDF does not guarantee callback ordering for back-to-back sends.
+        // Waiting here keeps exactly one ESP-NOW send in flight while RX
+        // callbacks continue filling the bounded worker queue.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        done->ver = SB_LINK_VERSION;
+        done->ok = s_sent_ok;
+        done->token = s->token;
+        memcpy(done->mac, s_sent_mac, 6);
     }
     return err;
 }
@@ -168,8 +174,8 @@ static esp_err_t do_peer(const item_t *it, bool add)
 {
     if (!s_radio_up) return ESP_ERR_INVALID_STATE;
     const sb_link_peer_t *p = (const sb_link_peer_t *)it->data;
-    if (it->len != sizeof *p) return ESP_ERR_INVALID_SIZE;
-    if (!add) return esp_now_del_peer(p->mac);
+    if (it->len != sizeof *p || p->ver != SB_LINK_VERSION) return ESP_ERR_INVALID_SIZE;
+    if (!add) return esp_now_is_peer_exist(p->mac) ? esp_now_del_peer(p->mac) : ESP_OK;
     esp_now_peer_info_t info = {.channel = 0, .ifidx = WIFI_IF_STA, .encrypt = p->encrypt != 0};
     memcpy(info.peer_addr, p->mac, 6);
     memcpy(info.lmk, p->lmk, 16);
@@ -195,35 +201,40 @@ static void worker(void *arg)
             send_host(SB_LINK_C2H_RX, buf, sizeof *r + it.len);
             break;
         }
-        case EV_SEND_DONE: {
-            sb_link_send_done_t d = {.ver = SB_LINK_VERSION, .ok = it.ok};
-            memcpy(d.mac, it.mac, 6);
-            d.token = s_tok_tail != s_tok_head ? s_tokens[s_tok_tail++ % TOKENS] : 0;
-            if (!it.ok) s_st.tx_fail++;
-            send_host(SB_LINK_C2H_SEND_DONE, &d, sizeof d);
-            break;
-        }
         case EV_CMD:
             switch (it.msg_id) {
             case SB_LINK_H2C_CONFIG:
-                result(it.msg_id, it.len == sizeof(sb_link_config_t) &&
-                                          it.data[0] == SB_LINK_VERSION
-                                      ? radio_config((const sb_link_config_t *)it.data)
-                                      : ESP_ERR_INVALID_VERSION);
+                result(it.msg_id, 0, it.len == sizeof(sb_link_config_t) &&
+                                             it.data[0] == SB_LINK_VERSION
+                                         ? radio_config((const sb_link_config_t *)it.data)
+                                         : ESP_ERR_INVALID_VERSION);
                 send_status();
                 break;
             case SB_LINK_H2C_SEND: {
-                esp_err_t err = do_send(&it);
+                sb_link_send_done_t d = {0};
+                esp_err_t err = do_send(&it, &d);
                 if (err != ESP_OK) {
                     s_st.tx_drop++;
-                    result(it.msg_id, err);
+                    if (it.len >= sizeof(sb_link_send_t)) {
+                        const sb_link_send_t *s = (const void *)it.data;
+                        d = (sb_link_send_done_t){.ver = SB_LINK_VERSION, .ok = false,
+                                                .token = s->token};
+                        memcpy(d.mac, s->mac, 6);
+                    }
+                    result(it.msg_id, d.token, err);
                 }
+                if (!d.ok) s_st.tx_fail++;
+                if (d.ver == SB_LINK_VERSION) send_host(SB_LINK_C2H_SEND_DONE, &d, sizeof d);
                 break;
             }
             case SB_LINK_H2C_PEER_ADD:
-            case SB_LINK_H2C_PEER_DEL:
-                result(it.msg_id, do_peer(&it, it.msg_id == SB_LINK_H2C_PEER_ADD));
+            case SB_LINK_H2C_PEER_DEL: {
+                const sb_link_peer_t *p = (const void *)it.data;
+                uint32_t token = it.len == sizeof *p ? p->token : 0;
+                result(it.msg_id, token,
+                       do_peer(&it, it.msg_id == SB_LINK_H2C_PEER_ADD));
                 break;
+            }
             case SB_LINK_H2C_GET_STATUS:
                 send_status();
                 break;
@@ -249,7 +260,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     s_q = xQueueCreate(QUEUE_LEN, sizeof(item_t));
-    xTaskCreate(worker, "sb_radio", 4096, NULL, 10, NULL);
+    xTaskCreate(worker, "sb_radio", 4096, NULL, 10, &s_worker);
     const uint32_t ids[] = {SB_LINK_H2C_CONFIG, SB_LINK_H2C_SEND, SB_LINK_H2C_PEER_ADD,
                             SB_LINK_H2C_PEER_DEL, SB_LINK_H2C_GET_STATUS, SB_LINK_H2C_RESTART};
     for (size_t i = 0; i < sizeof ids / sizeof ids[0]; i++)

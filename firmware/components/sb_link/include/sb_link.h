@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define SB_LINK_VERSION 1
+#define SB_LINK_VERSION 2
 #define SB_LINK_MAX_FRAME 250 // ESP-NOW v1 payload limit (see docs/PROTOCOL.md)
 
 // Message IDs (ESP-Hosted peer-data msg_id space). H2C: P4 -> C6, C2H: C6 -> P4.
@@ -48,6 +48,7 @@ typedef struct __attribute__((packed)) {
     uint8_t mac[6];
     uint8_t encrypt; // 1: use lmk
     uint8_t lmk[16];
+    uint32_t token; // echoed in RESULT
 } sb_link_peer_t;
 
 typedef struct __attribute__((packed)) {
@@ -82,6 +83,7 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint8_t ver;
     uint32_t req_id; // the H2C message this answers
+    uint32_t token;  // peer/send operation token; 0 for uncorrelated requests
     int32_t err;     // esp_err_t
 } sb_link_result_t;
 
