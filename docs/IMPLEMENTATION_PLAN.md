@@ -544,7 +544,7 @@ restarts, packet loss, and a soak test.
 | --- | --- |
 | 0 Flake | Done. `nix flake check` builds P4 offline and runs all tests. |
 | 1 Backups | P4 inventoried (v1.3 silicon, no security eFuses). Backups waived by owner; old firmware erased. C6 not yet read. |
-| 2 Bring-up | P4 boots; ESP-Hosted 3.0.9 link to C6 verified (C6 updated over SDIO from factory <1.0 firmware). Next: Ethernet, stress, ESP-NOW spike. |
+| 2 Bring-up | Mostly done. Ethernet works (100 Mbps full duplex, DHCP, 0% loss at 1400 B pings). The ESP-NOW spike works: the P4 configures the C6 radio over `sb_link`; broadcast is delivered; unicast to an absent peer correctly fails; LMK peers work; 1000 frames at 377 frames/s with 0 drops using credit pacing; the radio is reconfigured after a C6 restart. Open items: 24 h soak (`scripts/soak.sh`), cable pull test, RX test with a second ESP32. |
 | 3 Protocol | Frozen: `docs/PROTOCOL.md` and `docs/SECURITY.md`. C and Python codecs, golden vectors, differential tests and fuzzing are all in CI. |
 
 Deviations from the original plan:
@@ -556,6 +556,15 @@ Deviations from the original plan:
 - The Phase 3 gate item "node targets compile and complete a deep-sleep test"
   moves to Phase 7. ESPHome builds fetch PlatformIO toolchains, which the
   offline flake checks cannot do.
+- The C6 owns its radio: ESP-Hosted's host-driven Wi-Fi feature is disabled on
+  the C6, so the P4 has no Wi-Fi station (it uses Ethernet).
+- The C6 uses SDIO STREAM mode, not SW aggregation, because IDF 5.5.4 lacks the
+  SDIO send-cap fix.
+- When the C6 restarts on its own, ESP-Hosted's default policy also restarts
+  the P4, which recovers in about 3 s. Re-initialising the link in place
+  without a P4 reboot is a Phase 4 follow-up.
+- C6 firmware is updated from the P4 over SDIO (`scripts/update-c6.sh`), not
+  over TTL.
 
 ## 9. Protocol Freeze Decisions (resolved 2026-09-28)
 

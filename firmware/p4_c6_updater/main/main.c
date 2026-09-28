@@ -1,4 +1,4 @@
-// One-shot C6 updater. Connects to the C6 with the legacy ESP-Hosted host,
+// One-shot C6 updater (built with ESP-Hosted 2.x or 3.x host). Connects to the C6,
 // validates the embedded image, and writes it ONLY if the confirmation token
 // is present at the start of the `slave_fw` partition (written with esptool,
 // see scripts/update-c6.sh). The token is erased before writing, so the update
@@ -72,8 +72,8 @@ static void log_cp_version(void)
 {
     esp_hosted_coprocessor_fwver_t v = {0};
     if (esp_hosted_get_coprocessor_fwversion(&v) == ESP_OK)
-        ESP_LOGI(TAG, "C6 firmware: %" PRIu32 ".%" PRIu32 ".%" PRIu32, v.major1, v.minor1,
-                 v.patch1);
+        ESP_LOGI(TAG, "C6 firmware: %" PRIu32 ".%" PRIu32 ".%" PRIu32, (uint32_t)v.major1,
+                 (uint32_t)v.minor1, (uint32_t)v.patch1);
     else
         ESP_LOGW(TAG, "C6 firmware version unavailable (pre-1.0 firmware)");
 }
@@ -82,7 +82,7 @@ void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_LOGI(TAG, "legacy host v%d.%d.%d connecting to C6", ESP_HOSTED_VERSION_MAJOR_1,
+    ESP_LOGI(TAG, "ESP-Hosted host v%d.%d.%d connecting to C6", ESP_HOSTED_VERSION_MAJOR_1,
              ESP_HOSTED_VERSION_MINOR_1, ESP_HOSTED_VERSION_PATCH_1);
     ESP_ERROR_CHECK(esp_hosted_init());
     ESP_ERROR_CHECK(esp_hosted_connect_to_slave());

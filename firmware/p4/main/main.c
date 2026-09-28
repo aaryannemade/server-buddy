@@ -1,4 +1,4 @@
-// Phase 2 bring-up: report P4/C6 versions over ESP-Hosted. Read-only probe.
+// Phase 2 bring-up: Ethernet (DHCP) + P4/C6 versions over ESP-Hosted.
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_event.h"
@@ -7,6 +7,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "sb_eth.h"
+#include "sb_radio.h"
 #include "sb_crypto.h"
 #include "sb_protocol.h"
 
@@ -60,5 +62,9 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(sb_eth_start("server-buddy"));
     probe_c6();
+    // Spike default: world-safe domain, channel 1. Configurable in Phase 5.
+    const sb_radio_cfg_t radio = {.channel = 1, .country = "01"};
+    ESP_ERROR_CHECK(sb_radio_start(&radio));
 }

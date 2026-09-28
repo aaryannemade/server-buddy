@@ -104,7 +104,14 @@
               target,
               components ? extraComponents,
               preBuild ? "",
+              # Extra sdkconfig fragment layered over sdkconfig.defaults.
+              sdkconfigVariant ? null,
             }:
+            let
+              idfDefs = lib.optionalString (
+                sdkconfigVariant != null
+              ) "-D SDKCONFIG_DEFAULTS='sdkconfig.defaults;${sdkconfigVariant}'";
+            in
             pkgs.stdenvNoCC.mkDerivation {
               inherit name;
               src = firmwareSrc;
@@ -120,8 +127,8 @@
                 export IDF_COMPONENT_MANAGER=0
                 export SB_EXTRA_COMPONENTS=${components}
                 export ESP_IDF_VERSION=${lib.removePrefix "v" (lib.versions.majorMinor (lib.removePrefix "v" idfRev))}
-                idf.py -B build set-target ${target}
-                idf.py -B build build
+                idf.py -B build ${idfDefs} set-target ${target}
+                idf.py -B build ${idfDefs} build
                 runHook postBuild
               '';
               installPhase = ''
@@ -144,16 +151,27 @@
             target = "esp32c6";
           };
 
-          # One-shot tool: pushes the embedded C6 image over SDIO (legacy host).
-          p4-c6-updater = buildIdfProject {
-            name = "server-buddy-p4-c6-updater";
+          # One-shot tools: push the embedded C6 image over SDIO.
+          # -legacy: 2.x host, for C6s still on factory (pre-1.0) firmware.
+          # default: 3.x host, for C6s already on ESP-Hosted 3.x.
+          c6ImageHook = "cp ${c6-firmware}/server_buddy_c6.bin main/c6_image.bin";
+          p4-c6-updater-legacy = buildIdfProject {
+            name = "server-buddy-p4-c6-updater-legacy";
             project = "p4_c6_updater";
             target = "esp32p4";
+            sdkconfigVariant = "sdkconfig.hosted_v2";
             components = mkComponents {
               esp_hosted = esp-hosted-v2;
               esp_wifi_remote = "${esp-wifi-remote}/components/esp_wifi_remote";
             };
-            preBuild = "cp ${c6-firmware}/server_buddy_c6.bin main/c6_image.bin";
+            preBuild = c6ImageHook;
+          };
+          p4-c6-updater = buildIdfProject {
+            name = "server-buddy-p4-c6-updater";
+            project = "p4_c6_updater";
+            target = "esp32p4";
+            sdkconfigVariant = "sdkconfig.hosted_v3";
+            preBuild = c6ImageHook;
           };
 
           # ---- protocol v1 host tests
@@ -232,6 +250,7 @@
               p4-firmware
               c6-firmware
               p4-c6-updater
+              p4-c6-updater-legacy
               ;
             default = p4-firmware;
           };
@@ -264,6 +283,7 @@
               c6-firmware
               protocol-python
               p4-c6-updater
+              p4-c6-updater-legacy
               protocol-c
               protocol-fuzz
               ;

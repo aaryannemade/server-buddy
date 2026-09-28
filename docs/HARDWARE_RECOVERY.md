@@ -13,6 +13,8 @@ Nothing in this phase writes flash or eFuses. Complete it before any flashing.
 | P4 secure boot / flash encryption | Disabled / disabled; key blocks empty; download mode enabled; `SECURE_VERSION=0` |
 | C6 firmware | Factory ESP-Hosted < 1.0 (reported "0.0.0"); **updated to ESP-Hosted 3.0.9 over SDIO on 2026-09-28** (`scripts/update-c6.sh`) |
 | P4↔C6 link | SDIO slot 1, 4-bit, 40 MHz: CLK 18, CMD 19, D0–D3 14–17; C6 `CHIP_PU` on GPIO 54 (verified working) |
+| Ethernet | IP101, PHY addr 1, MDC 31, MDIO 52, PHY reset 51, RMII TX_EN 49, TXD0/1 34/35, CRS_DV 28, RXD0/1 29/30, 50 MHz ref clock in on GPIO 50 (verified: 100 Mbps full duplex) |
+| C6 radio MAC (ESP-NOW source) | `14:c1:9f:01:dd:18` |
 | C6 flash / MAC / security | _not read (needs TTL pads; not required so far)_ |
 | Previous firmware | Unknown third-party "ESP32-P4 Home Assistant Hub"; owner waived backup; P4 erased 2026-09-28 |
 
