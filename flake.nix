@@ -373,6 +373,7 @@
                   ha-pytest --version
                   ha-mypy --version
                   ruff --version
+                  ruff check ${./scripts/hw-api-smoke.py}
                   touch $out
                 '';
           };
