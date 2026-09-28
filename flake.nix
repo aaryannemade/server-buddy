@@ -5,6 +5,21 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     # ESP-IDF toolchains; keeps its own nixpkgs pin for the IDF Python env.
     esp-dev.url = "github:mirrexagon/nixpkgs-esp-dev";
+    # P4<->C6 SDIO transport (host on P4, co-processor firmware on C6).
+    esp-hosted = {
+      url = "git+https://github.com/espressif/esp-hosted-mcu?ref=refs/tags/v3.0.9&submodules=1";
+      flake = false;
+    };
+    # Legacy host, used only by the one-shot C6 updater: it still speaks the
+    # pre-1.0 RPC of the C6's factory firmware, which the v3 host does not.
+    esp-hosted-v2 = {
+      url = "git+https://github.com/espressif/esp-hosted-mcu?ref=refs/tags/v2.12.13&submodules=1";
+      flake = false;
+    };
+    esp-wifi-remote = {
+      url = "github:espressif/esp-wifi-remote/wifi_remote-v1.6.5";
+      flake = false;
+    };
   };
 
   outputs =
@@ -12,6 +27,9 @@
       self,
       nixpkgs,
       esp-dev,
+      esp-hosted,
+      esp-hosted-v2,
+      esp-wifi-remote,
     }:
     let
       systems = [
@@ -71,11 +89,21 @@
             root = ./firmware;
             fileset = lib.fileset.gitTracked ./firmware;
           };
+          # Pinned third-party IDF components; IDF names components by directory.
+          mkComponents =
+            links:
+            pkgs.runCommand "sb-idf-components" { } (
+              "mkdir $out\n" + lib.concatLines (lib.mapAttrsToList (n: src: "ln -s ${src} $out/${n}") links)
+            );
+          extraComponents = mkComponents { esp_hosted = esp-hosted; };
+
           buildIdfProject =
             {
               name,
               project,
               target,
+              components ? extraComponents,
+              preBuild ? "",
             }:
             pkgs.stdenvNoCC.mkDerivation {
               inherit name;
@@ -84,11 +112,14 @@
               nativeBuildInputs = [ esp-idf ];
               dontConfigure = true;
               dontFixup = true;
+              inherit preBuild;
               buildPhase = ''
                 runHook preBuild
                 export HOME=$TMPDIR/home
                 mkdir -p $HOME
                 export IDF_COMPONENT_MANAGER=0
+                export SB_EXTRA_COMPONENTS=${components}
+                export ESP_IDF_VERSION=${lib.removePrefix "v" (lib.versions.majorMinor (lib.removePrefix "v" idfRev))}
                 idf.py -B build set-target ${target}
                 idf.py -B build build
                 runHook postBuild
@@ -105,6 +136,24 @@
             name = "server-buddy-p4";
             project = "p4";
             target = "esp32p4";
+          };
+
+          c6-firmware = buildIdfProject {
+            name = "server-buddy-c6";
+            project = "c6";
+            target = "esp32c6";
+          };
+
+          # One-shot tool: pushes the embedded C6 image over SDIO (legacy host).
+          p4-c6-updater = buildIdfProject {
+            name = "server-buddy-p4-c6-updater";
+            project = "p4_c6_updater";
+            target = "esp32p4";
+            components = mkComponents {
+              esp_hosted = esp-hosted-v2;
+              esp_wifi_remote = "${esp-wifi-remote}/components/esp_wifi_remote";
+            };
+            preBuild = "cp ${c6-firmware}/server_buddy_c6.bin main/c6_image.bin";
           };
 
           # ---- protocol v1 host tests
@@ -178,7 +227,12 @@
         in
         {
           packages = {
-            inherit esp-idf p4-firmware;
+            inherit
+              esp-idf
+              p4-firmware
+              c6-firmware
+              p4-c6-updater
+              ;
             default = p4-firmware;
           };
 
@@ -196,6 +250,8 @@
             ];
             shellHook = ''
               export IDF_CCACHE_ENABLE=1
+              export IDF_COMPONENT_MANAGER=0
+              export SB_EXTRA_COMPONENTS=${extraComponents}
               export CCACHE_DIR="''${XDG_CACHE_HOME:-$HOME/.cache}/server-buddy-ccache"
             '';
           };
@@ -205,7 +261,9 @@
           checks = {
             inherit
               p4-firmware
+              c6-firmware
               protocol-python
+              p4-c6-updater
               protocol-c
               protocol-fuzz
               ;

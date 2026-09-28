@@ -11,7 +11,9 @@ Nothing in this phase writes flash or eFuses. Complete it before any flashing.
 | P4 flash / MAC | 32 MB GigaDevice (`c8/4019`) / `e8:f6:0a:e4:1e:7b` |
 | P4 USB-UART | CH343 `1a86:55d3` → `/dev/ttyACM0`, console on GPIO 37/38 |
 | P4 secure boot / flash encryption | Disabled / disabled; key blocks empty; download mode enabled; `SECURE_VERSION=0` |
-| C6 flash / MAC / security | _not yet read (needs TTL adapter)_ |
+| C6 firmware | Factory ESP-Hosted < 1.0 (reported "0.0.0"); **updated to ESP-Hosted 3.0.9 over SDIO on 2026-09-28** (`scripts/update-c6.sh`) |
+| P4↔C6 link | SDIO slot 1, 4-bit, 40 MHz: CLK 18, CMD 19, D0–D3 14–17; C6 `CHIP_PU` on GPIO 54 (verified working) |
+| C6 flash / MAC / security | _not read (needs TTL pads; not required so far)_ |
 | Previous firmware | Unknown third-party "ESP32-P4 Home Assistant Hub"; owner waived backup; P4 erased 2026-09-28 |
 
 P4 recovery is simple while these eFuses are unburned: `nix build .#p4-firmware`
@@ -56,3 +58,13 @@ esptool.py --chip esp32c6 -p /dev/ttyUSB0 --before no_reset --after no_reset \
 Rehearse non-destructively: verify the dump against the chip without writing:
 `esptool.py ... verify_flash 0x0 backups/<dir>/flash_full.bin`.
 Do not erase the only board to test recovery.
+
+## C6 updates without wiring
+
+The C6 is normally updated from the P4 over SDIO (ESP-Hosted co-processor OTA):
+`scripts/update-c6.sh` flashes the one-shot `p4-c6-updater` (C6 image embedded),
+writes a one-time confirmation token, runs the update, and prints the log.
+Reflash the main image afterwards: `scripts/flash-p4.sh`.
+If the write or the C6's image check fails, the C6 keeps its old firmware.
+The TTL pads (#14, underside: TXD, RXD, GND, IO9) are only needed if a C6
+image is accepted but then fails to boot.

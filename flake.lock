@@ -19,6 +19,61 @@
         "type": "github"
       }
     },
+    "esp-hosted": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790452425,
+        "narHash": "sha256-S4E1Tznn0aD35Y+E5jNidCeBMgXc0RtIwtI4dkLHAwc=",
+        "ref": "refs/tags/v3.0.9",
+        "rev": "95e70156a3904fa172b9bb50888a4d7dd23d2f3a",
+        "revCount": 1525,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/espressif/esp-hosted-mcu"
+      },
+      "original": {
+        "ref": "refs/tags/v3.0.9",
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/espressif/esp-hosted-mcu"
+      }
+    },
+    "esp-hosted-v2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788545693,
+        "narHash": "sha256-9sf7LHLj5bf+oi5pdN519t0tGZAcbdHOT8GxvY/hgPc=",
+        "ref": "refs/tags/v2.12.13",
+        "rev": "dd0176e5fc959d79b306f6677a2f878123c58e9a",
+        "revCount": 1295,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/espressif/esp-hosted-mcu"
+      },
+      "original": {
+        "ref": "refs/tags/v2.12.13",
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/espressif/esp-hosted-mcu"
+      }
+    },
+    "esp-wifi-remote": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790159976,
+        "narHash": "sha256-jCt9xEd6QWOHt8/yE02WE/KObNzqz4rDJV0rxz+PmKQ=",
+        "owner": "espressif",
+        "repo": "esp-wifi-remote",
+        "rev": "ad5497293a362bdd529c76fc8a53f5855484a3f5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "espressif",
+        "ref": "wifi_remote-v1.6.5",
+        "repo": "esp-wifi-remote",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -72,6 +127,9 @@
     "root": {
       "inputs": {
         "esp-dev": "esp-dev",
+        "esp-hosted": "esp-hosted",
+        "esp-hosted-v2": "esp-hosted-v2",
+        "esp-wifi-remote": "esp-wifi-remote",
         "nixpkgs": "nixpkgs_2"
       }
     },
