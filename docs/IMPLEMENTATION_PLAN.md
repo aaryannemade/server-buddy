@@ -543,8 +543,8 @@ restarts, packet loss, and a soak test.
 | Phase | Status |
 | --- | --- |
 | 0 Flake | Done. `nix flake check` builds P4 offline and runs all tests. |
-| 1 Backups | Tooling ready (`scripts/hw-backup.sh`, `docs/HARDWARE_RECOVERY.md`). Needs the board. |
-| 2 Bring-up | Blocked on Phase 1. |
+| 1 Backups | P4 inventoried (v1.3 silicon, no security eFuses). Backups waived by owner; old firmware erased. C6 not yet read. |
+| 2 Bring-up | Smoke image boots on P4 v1.3. Next: Ethernet, then ESP-Hosted to the C6. |
 | 3 Protocol | Frozen: `docs/PROTOCOL.md` and `docs/SECURITY.md`. C and Python codecs, golden vectors, differential tests and fuzzing are all in CI. |
 
 Deviations from the original plan:

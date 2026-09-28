@@ -1,0 +1,6 @@
+# Waveshare ESP32-P4-WIFI6-POE-ETH rev 2.0, as inventoried 2026-09-28:
+# P4 silicon v1.3 (pre-v3: images built for v3.x will not boot), 32 MB flash,
+# secure boot and flash encryption disabled.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y

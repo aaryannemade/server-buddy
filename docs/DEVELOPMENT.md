@@ -25,5 +25,5 @@ vendored or packaged in the flake before a firmware check can use it.
 
 ## P4 silicon revision
 
-The smoke image uses IDF defaults and is compile-only until Phase 1 records
-the P4 silicon revision. Do not flash it before then.
+This board is P4 silicon v1.3; `firmware/p4/sdkconfig.defaults` targets
+revisions < v3. A v3.x board needs those lines removed.

@@ -7,12 +7,16 @@ Nothing in this phase writes flash or eFuses. Complete it before any flashing.
 | Item | Value |
 | --- | --- |
 | Board / PCB rev | ESP32-P4-WIFI6-POE-ETH rev 2.0 |
-| P4 silicon rev | _from boot log_ |
-| P4 flash size / MAC | _from backup_ |
-| C6 flash size / MAC | _from backup_ |
-| P4 secure boot / flash encryption | _from eFuse summary_ |
-| C6 secure boot / flash encryption | _from eFuse summary_ |
-| Factory image source + SHA-256 | _Waveshare link_ |
+| P4 silicon rev | **v1.3** (ROM eco2, eFuse block v0.3): build with `ESP32P4_SELECTS_REV_LESS_V3` |
+| P4 flash / MAC | 32 MB GigaDevice (`c8/4019`) / `e8:f6:0a:e4:1e:7b` |
+| P4 USB-UART | CH343 `1a86:55d3` → `/dev/ttyACM0`, console on GPIO 37/38 |
+| P4 secure boot / flash encryption | Disabled / disabled; key blocks empty; download mode enabled; `SECURE_VERSION=0` |
+| C6 flash / MAC / security | _not yet read (needs TTL adapter)_ |
+| Previous firmware | Unknown third-party "ESP32-P4 Home Assistant Hub"; owner waived backup; P4 erased 2026-09-28 |
+
+P4 recovery is simple while these eFuses are unburned: `nix build .#p4-firmware`
+then `esptool.py --chip esp32p4 -p /dev/ttyACM0 write_flash @result/flash_args`
+(run inside `result/`).
 
 ## 1. P4
 
