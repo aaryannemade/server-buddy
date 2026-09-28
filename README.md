@@ -2,13 +2,15 @@
 
 ## Info
 
-A esp32 p4 eth POE board that serves multiple multiple functions.
+An ESP32-P4 Ethernet/PoE board that serves multiple functions.
 
-the main fuctions are:
+The main functions are:
 
-- An espnow router to Home Assistant that works like a mqtt hub.
-- connection to an xia logger hat for server cabinet temp, humidity, and
+- An ESP-NOW router to Home Assistant that works like an MQTT hub.
+- Connection to an XIA logger hat for server cabinet temperature, humidity, and
   brightness.
-- connect to a led matrix display to show server stats, etc..
-- serial tty port via usb for raspberry pi's to connect in case of trouble
-  shooting to connect to tty directly.
+- Connection to an LED matrix display to show server statistics.
+- A serial TTY port over USB for direct Raspberry Pi troubleshooting.
+
+See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for the proposed
+architecture, development phases, test gates, and recovery process.
