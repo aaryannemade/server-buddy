@@ -4,6 +4,8 @@
 #include "esp_event.h"
 #include "esp_hosted.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -14,6 +16,33 @@
 
 static const char *TAG = "server_buddy";
 
+static const char *reset_reason(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "PANIC";
+    case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: return "WATCHDOG";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";
+    case ESP_RST_EXT: return "external";
+    default: return "other";
+    }
+}
+
+// Periodic one-line health summary (grep "hub:" in soak logs).
+static void health_task(void *arg)
+{
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(60000));
+        sb_eth_stats_t e = sb_eth_stats();
+        ESP_LOGI(TAG, "hub: up=%llds reset=%s eth=%s ups=%" PRIu32 " downs=%" PRIu32
+                      " last_down=%" PRIu32 "ms ip_acq=%" PRIu32 " heap_min=%" PRIu32,
+                 esp_timer_get_time() / 1000000, reset_reason(), e.link_up ? "up" : "DOWN",
+                 e.link_ups, e.link_downs, e.last_down_ms, e.ip_acquired,
+                 (uint32_t)esp_get_minimum_free_heap_size());
+    }
+}
+
 static void log_p4(void)
 {
     esp_chip_info_t chip;
@@ -23,6 +52,7 @@ static void log_p4(void)
              chip.revision / 100, chip.revision % 100, SB_VERSION);
     uint8_t key[SB_KEY_LEN] = {0}, id[SB_KEY_ID_LEN];
     ESP_LOGI(TAG, "crypto self-test %s", sb_key_id(key, id) ? "ok" : "FAILED");
+    ESP_LOGI(TAG, "reset reason: %s", reset_reason());
 }
 
 static void probe_c6(void)
@@ -67,4 +97,5 @@ void app_main(void)
     // Spike default: world-safe domain, channel 1. Configurable in Phase 5.
     const sb_radio_cfg_t radio = {.channel = 1, .country = "01"};
     ESP_ERROR_CHECK(sb_radio_start(&radio));
+    xTaskCreate(health_task, "sb_health", 3072, NULL, 3, NULL);
 }

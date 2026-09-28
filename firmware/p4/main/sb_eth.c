@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 
 #define PHY_ADDR 1
 #define PHY_RST_GPIO 51
@@ -17,6 +18,8 @@
 static const char *TAG = "sb_eth";
 static esp_netif_t *s_netif;
 static volatile bool s_has_ip;
+static sb_eth_stats_t s_stats;
+static int64_t s_down_at_us, s_down_ip_us;
 
 static void on_eth(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -27,13 +30,23 @@ static void on_eth(void *arg, esp_event_base_t base, int32_t id, void *data)
         eth_duplex_t duplex;
         esp_eth_ioctl(h, ETH_CMD_G_SPEED, &speed);
         esp_eth_ioctl(h, ETH_CMD_G_DUPLEX_MODE, &duplex);
-        ESP_LOGI(TAG, "link up: %s Mbps %s duplex", speed == ETH_SPEED_100M ? "100" : "10",
-                 duplex == ETH_DUPLEX_FULL ? "full" : "half");
+        s_stats.link_up = true;
+        s_stats.link_ups++;
+        if (s_down_at_us) {
+            s_stats.last_down_ms = (uint32_t)((esp_timer_get_time() - s_down_at_us) / 1000);
+            s_down_at_us = 0;
+        }
+        ESP_LOGI(TAG, "link up #%" PRIu32 ": %s Mbps %s duplex (was down %" PRIu32 " ms)",
+                 s_stats.link_ups, speed == ETH_SPEED_100M ? "100" : "10",
+                 duplex == ETH_DUPLEX_FULL ? "full" : "half", s_stats.last_down_ms);
         break;
     }
     case ETHERNET_EVENT_DISCONNECTED:
         s_has_ip = false;
-        ESP_LOGW(TAG, "link down");
+        s_stats.link_up = false;
+        s_stats.link_downs++;
+        s_down_at_us = s_down_ip_us = esp_timer_get_time();
+        ESP_LOGW(TAG, "link down #%" PRIu32, s_stats.link_downs);
         break;
     default:
         break;
@@ -45,8 +58,13 @@ static void on_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (id == IP_EVENT_ETH_GOT_IP) {
         const ip_event_got_ip_t *e = data;
         s_has_ip = true;
-        ESP_LOGI(TAG, "got IP " IPSTR " mask " IPSTR " gw " IPSTR, IP2STR(&e->ip_info.ip),
-                 IP2STR(&e->ip_info.netmask), IP2STR(&e->ip_info.gw));
+        s_stats.ip_acquired++;
+        s_stats.ip = e->ip_info.ip.addr;
+        uint32_t since_down = s_down_ip_us ? (uint32_t)((esp_timer_get_time() - s_down_ip_us) / 1000) : 0;
+        s_down_ip_us = 0;
+        ESP_LOGI(TAG, "got IP " IPSTR " mask " IPSTR " gw " IPSTR " (#%" PRIu32 ", %" PRIu32 " ms after link loss)",
+                 IP2STR(&e->ip_info.ip), IP2STR(&e->ip_info.netmask), IP2STR(&e->ip_info.gw),
+                 s_stats.ip_acquired, since_down);
     } else if (id == IP_EVENT_ETH_LOST_IP) {
         s_has_ip = false;
         ESP_LOGW(TAG, "lost IP");
@@ -90,3 +108,5 @@ esp_err_t sb_eth_start(const char *hostname)
 }
 
 bool sb_eth_has_ip(void) { return s_has_ip; }
+
+sb_eth_stats_t sb_eth_stats(void) { return s_stats; }

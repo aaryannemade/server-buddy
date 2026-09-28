@@ -544,7 +544,7 @@ restarts, packet loss, and a soak test.
 | --- | --- |
 | 0 Flake | Done. `nix flake check` builds P4 offline and runs all tests. |
 | 1 Backups | P4 inventoried (v1.3 silicon, no security eFuses). Backups waived by owner; old firmware erased. C6 not yet read. |
-| 2 Bring-up | Mostly done. Ethernet works (100 Mbps full duplex, DHCP, 0% loss at 1400 B pings). The ESP-NOW spike works: the P4 configures the C6 radio over `sb_link`; broadcast is delivered; unicast to an absent peer correctly fails; LMK peers work; 1000 frames at 377 frames/s with 0 drops using credit pacing; the radio is reconfigured after a C6 restart. Open items: 24 h soak (`scripts/soak.sh`), cable pull test, RX test with a second ESP32. |
+| 2 Bring-up | Mostly done. Ethernet works (100 Mbps full duplex, DHCP, 0% loss at 1400 B pings). The ESP-NOW spike works: the P4 configures the C6 radio over `sb_link`; broadcast is delivered; unicast to an absent peer correctly fails; LMK peers work; 1000 frames at 377 frames/s with 0 drops using credit pacing; the radio is reconfigured after a C6 restart. Cable pull verified (link down detected, re-up 100 Mbps, same DHCP IP 1 s later, no reboot). Open items: 24 h soak (`scripts/soak.sh`), RX test with a second ESP32. |
 | 3 Protocol | Frozen: `docs/PROTOCOL.md` and `docs/SECURITY.md`. C and Python codecs, golden vectors, differential tests and fuzzing are all in CI. |
 
 Deviations from the original plan:
