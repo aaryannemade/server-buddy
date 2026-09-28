@@ -538,21 +538,36 @@ battery-powered ESP32 temperature sensor, one temperature state, one battery
 state, and one boot event. Expand entity types only after that path survives
 restarts, packet loss, and a soak test.
 
-## 9. Decisions Needed Before Protocol Freeze
+## Progress
 
-- Maximum supported node count, especially whether more than 17 encrypted
-  peers is a requirement.
-- Which ESP32 variants the battery nodes use and whether any are ESP8266.
-- Whether HA must send commands to sleeping nodes in v1 or receive-only nodes
-  are sufficient.
-- Required event/entity types beyond temperature, humidity, battery, and basic
-  binary state.
-- Pairing UX: physical hub button, serial command, HA timed window, or a
-  combination.
-- Whether operation across routed VLANs is required; mDNS discovery will not
-  cross them without assistance, but manual host setup can.
-- Whether MQTT compatibility is a real requirement or only the desired
-  publish/retain/discovery behavior.
+| Phase | Status |
+| --- | --- |
+| 0 Flake | Done. `nix flake check` builds P4 offline and runs all tests. |
+| 1 Backups | Tooling ready (`scripts/hw-backup.sh`, `docs/HARDWARE_RECOVERY.md`). Needs the board. |
+| 2 Bring-up | Blocked on Phase 1. |
+| 3 Protocol | Frozen: `docs/PROTOCOL.md` and `docs/SECURITY.md`. C and Python codecs, golden vectors, differential tests and fuzzing are all in CI. |
+
+Deviations from the original plan:
+
+- An application-layer MIC was added, because ESP-IDF does not guarantee that
+  plaintext frames from an encrypted peer are rejected.
+- Staged channel migration is deferred; changing the channel requires
+  re-pairing every node.
+- The Phase 3 gate item "node targets compile and complete a deep-sleep test"
+  moves to Phase 7. ESPHome builds fetch PlatformIO toolchains, which the
+  offline flake checks cannot do.
+
+## 9. Protocol Freeze Decisions (resolved 2026-09-28)
+
+- Node limit: 17 per hub, all using native ESP-NOW LMK encryption.
+- Node chips: ESP32-C3, ESP32-S3, ESP32-C6. No ESP8266.
+- v1 is receive-only; `COMMAND` is reserved, not implemented.
+- Entity types: sensor, binary sensor, text sensor, event.
+- Pairing: hub button or authenticated HA action opens a timed window.
+- HA and hub share one L2 network; mDNS discovery, manual host as fallback.
+- No MQTT in v1; native HA integration only.
+
+See [SECURITY.md](SECURITY.md) and [PROTOCOL.md](PROTOCOL.md).
 
 ## 10. References
 

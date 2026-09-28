@@ -66,15 +66,21 @@
               ];
           };
 
-          # Builds an ESP-IDF project offline inside the Nix sandbox.
+          # Builds an ESP-IDF project (subdir of ./firmware) offline in the sandbox.
+          firmwareSrc = lib.fileset.toSource {
+            root = ./firmware;
+            fileset = lib.fileset.gitTracked ./firmware;
+          };
           buildIdfProject =
             {
               name,
-              src,
+              project,
               target,
             }:
             pkgs.stdenvNoCC.mkDerivation {
-              inherit name src;
+              inherit name;
+              src = firmwareSrc;
+              sourceRoot = "source/${project}";
               nativeBuildInputs = [ esp-idf ];
               dontConfigure = true;
               dontFixup = true;
@@ -97,12 +103,78 @@
 
           p4-firmware = buildIdfProject {
             name = "server-buddy-p4";
-            src = lib.fileset.toSource {
-              root = ./firmware/p4;
-              fileset = lib.fileset.gitTracked ./firmware/p4;
-            };
+            project = "p4";
             target = "esp32p4";
           };
+
+          # ---- protocol v1 host tests
+          protocolSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./protocol
+              ./firmware/components/sb_protocol
+              ./tests/protocol_c
+            ];
+          };
+          protocolPython = pkgs.python3.withPackages (ps: [ ps.pytest ]);
+          sbSources = "firmware/components/sb_protocol";
+          cFlags = "-std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror -I${sbSources}/include -I${lib.getDev pkgs.mbedtls}/include";
+
+          protocol-python =
+            pkgs.runCommand "protocol-python"
+              {
+                nativeBuildInputs = [
+                  protocolPython
+                  pkgs.ruff
+                ];
+              }
+              ''
+                cp -r ${protocolSrc} src && chmod -R +w src && cd src/protocol/python
+                ruff check --no-cache .
+                python -m pytest -q -p no:cacheprovider
+                touch $out
+              '';
+
+          protocol-c =
+            pkgs.runCommand "protocol-c-asan"
+              {
+                nativeBuildInputs = [
+                  pkgs.gcc
+                  protocolPython
+                ];
+              }
+              ''
+                cd ${protocolSrc}
+                gcc ${cFlags} -fsanitize=address,undefined -fno-sanitize-recover=all \
+                  ${sbSources}/*.c tests/protocol_c/test_vectors.c \
+                  -L${pkgs.mbedtls}/lib -Wl,-rpath,${pkgs.mbedtls}/lib -lmbedcrypto -lm \
+                  -o $TMPDIR/test_vectors
+                # Differential: C must agree with Python on 30k mutated frames.
+                PYTHONPATH=protocol/python python -m sb_protocol.vectors --mutations 30000 $TMPDIR/mutations.txt
+                $TMPDIR/test_vectors protocol/test-vectors $TMPDIR
+                g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -fsyntax-only \
+                  -I${sbSources}/include tests/protocol_c/cxx_header.cpp
+                touch $out
+              '';
+
+          protocol-fuzz =
+            pkgs.runCommand "protocol-libfuzzer"
+              {
+                nativeBuildInputs = [
+                  pkgs.clang
+                  protocolPython
+                ];
+              }
+              ''
+                cd ${protocolSrc}
+                clang ${cFlags} -fsanitize=fuzzer,address,undefined \
+                  ${sbSources}/sb_protocol.c ${sbSources}/sb_describe.c tests/protocol_c/fuzz_decode.c \
+                  -o $TMPDIR/fuzz
+                mkdir $TMPDIR/corpus
+                python ${./tests/protocol_c/make_corpus.py} protocol/test-vectors $TMPDIR/corpus
+                $TMPDIR/fuzz -runs=2000000 -seed=1 $TMPDIR/corpus
+                touch $out
+              '';
         in
         {
           packages = {
@@ -131,7 +203,12 @@
           formatter = pkgs.nixfmt-tree;
 
           checks = {
-            inherit p4-firmware;
+            inherit
+              p4-firmware
+              protocol-python
+              protocol-c
+              protocol-fuzz
+              ;
 
             nix-format = pkgs.runCommand "nix-format" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''
               nixfmt --check ${./flake.nix}
