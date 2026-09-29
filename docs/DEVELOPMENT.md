@@ -111,5 +111,7 @@ alongside the boot event; a state report may span several acknowledged frames.
 The ESPHome build uses PlatformIO downloads and is not part of offline
 `nix flake check`; `esphome-yaml` validates the config locally and checks that
 the component's symlinks use the exact P4 protocol C source. A full ESP32-C3
-build with a dummy key passed on ESPHome 2026.5.1 and 2026.7.4. Real delivery
-of the new entities still requires flashing the updated node firmware.
+build with a dummy key passed on ESPHome 2026.5.1 and 2026.7.4. The updated
+2026.7.4 firmware restored the existing encrypted session after a USB reset;
+the hub ACKed all six states, and HA displayed the new diagnostic values and
+Boot Button transitions.
