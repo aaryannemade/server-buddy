@@ -1,0 +1,1 @@
+../../../firmware/components/sb_protocol/include/sb_protocol.h

@@ -1,0 +1,82 @@
+# USB-powered XIAO ESP32-C3 + XIAO Logger HAT -> Server Buddy P4/C6 hub.
+# ESPHome Builder fetches the external component from this repository. Push
+# the commit containing esphome/components/server_buddy before compiling.
+#
+# Pair in Home Assistant's SERVER BUDDY integration: Configure -> Add a node,
+# then immediately put the one-time node key into Builder's secrets.yaml under
+# server_buddy_node_key (see server-buddy-node-secrets.example.yaml). The hub
+# has a 120 s targeted pairing window. If it expires: Configure -> Pair node.
+# No wifi:, api:, ota: or battery gauge; the XIAO stays awake on USB power.
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/aaryannemade/server-buddy.git
+      ref: main
+      path: esphome/components
+    components: [server_buddy]
+
+esphome:
+  name: xiao-logger-hat-espnow
+  friendly_name: XIAO Logger HAT (Server Buddy)
+  on_boot:
+    - priority: 700 # after GPIO output setup (800), before I2C sensors (600)
+      then:
+        - output.turn_on: logger_hat_power
+        - lambda: 'delay(50);' # block sensor setup until SHT40/BH1750 VDD is stable
+
+esp32:
+  board: seeed_xiao_esp32c3
+  framework:
+    type: esp-idf
+
+logger:
+  level: DEBUG
+
+output:
+  - platform: gpio
+    id: logger_hat_power
+    pin: GPIO10 # XIAO D10
+
+i2c:
+  id: hat_i2c
+  sda: GPIO6 # XIAO D4
+  scl: GPIO7 # XIAO D5
+  scan: true
+
+sensor:
+  - platform: sht4x
+    id: sht40
+    i2c_id: hat_i2c
+    address: 0x44
+    temperature:
+      name: Temperature
+      id: logger_temperature
+    humidity:
+      name: Humidity
+      id: logger_humidity
+    update_interval: 30s
+
+  - platform: bh1750
+    i2c_id: hat_i2c
+    address: 0x23
+    name: Illuminance
+    id: logger_illuminance
+    update_interval: 30s
+
+# ESPHome's espnow component stays disconnected from Wi-Fi on channel 1.
+# This is the C6 hub radio MAC, NOT the P4 Ethernet MAC or your router's
+# Wi-Fi channel 6. The hub uses Ethernet and fixes its ESP-NOW radio at 1.
+espnow:
+  id: espnow_radio
+  channel: 1
+  peers:
+    - 14:C1:9F:01:DD:18
+
+server_buddy:
+  espnow_id: espnow_radio
+  hub_mac: 14:C1:9F:01:DD:18
+  node_key: !secret server_buddy_node_key
+  temperature_id: logger_temperature
+  humidity_id: logger_humidity
+  illuminance_id: logger_illuminance

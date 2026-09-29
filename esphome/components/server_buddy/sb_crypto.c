@@ -1,0 +1,1 @@
+../../../firmware/components/sb_protocol/sb_crypto.c
