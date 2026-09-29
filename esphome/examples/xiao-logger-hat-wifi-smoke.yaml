@@ -35,7 +35,7 @@ switch:
   - platform: gpio
     id: logger_hat_power
     name: Logger HAT Sensor Power
-    internal: true
+    entity_category: diagnostic # temporary: expose power control to isolate I2C failures
     pin: GPIO10 # XIAO D10: enables Logger HAT sensors; no battery divider used
     restore_mode: ALWAYS_ON # assert during hardware setup, before I2C devices initialise
 
