@@ -331,7 +331,7 @@ void ServerBuddyNode::handle_ack_(const uint8_t *data, size_t len, const sb_fram
   }
 }
 
-bool ServerBuddyNode::on_receive(const espnow::ESPNowRecvInfo &info, const uint8_t *data, uint8_t size) {
+bool ServerBuddyNode::on_receive(const espnow::ESPNowRecvInfo &info, const uint8_t *data, ReceiveSize size) {
   if (memcmp(info.src_addr, this->hub_mac_.data(), 6) != 0 || size > SB_MAX_FRAME) return false;
   // An enrolled frame must authenticate BEFORE decoding; PAIR_RESPONSE carries a
   // separate node-key tag instead of a MIC.

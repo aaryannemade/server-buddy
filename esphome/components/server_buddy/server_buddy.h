@@ -6,10 +6,19 @@
 #include "esphome/components/espnow/espnow_component.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
+#include "esphome/core/version.h"
 #include "sb_crypto.h"
 #include "sb_protocol.h"
 
 namespace esphome::server_buddy {
+
+// ESPHome 2026.7 widened ESP-NOW receive sizes for opt-in v2 payloads.
+// Server Buddy still caps frames at 250 bytes; match the handler's ABI.
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 7, 0)
+using ReceiveSize = uint16_t;
+#else
+using ReceiveSize = uint8_t;
+#endif
 
 // Receive-only Server Buddy radio protocol v1 for an always-on USB-powered node.
 // ESPHome owns ESP-NOW callback queues; this component runs only on the main loop.
@@ -26,7 +35,7 @@ class ServerBuddyNode : public Component, public espnow::ESPNowReceivedPacketHan
   void loop() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::LATE - 1.0f; }
-  bool on_receive(const espnow::ESPNowRecvInfo &info, const uint8_t *data, uint8_t size) override;
+  bool on_receive(const espnow::ESPNowRecvInfo &info, const uint8_t *data, ReceiveSize size) override;
 
  protected:
   enum class Pending : uint8_t { NONE, HELLO, DESCRIBE, BOOT_EVENT, STATE };
