@@ -1,0 +1,113 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to a Server Buddy hub",
+        "description": "Enter the hub's IP address or hostname. The hub uses HTTPS with a self-signed certificate that Home Assistant pins after setup.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Server Buddy hub found",
+        "description": "Set up hub {hub_id} at {host}?"
+      },
+      "claim": {
+        "title": "Claim hub {hub_id}",
+        "description": "Hub {hub_id} at {host} has not been claimed. Home Assistant will become its only controller and store a new credential. Any device on the local network can claim an unclaimed hub, so only continue on a trusted network.\n\nCertificate fingerprint (SHA-256): `{fingerprint}`"
+      },
+      "token": {
+        "title": "Authenticate hub {hub_id}",
+        "description": "This hub is already claimed. Enter its existing credential, or erase the credential on the hub (development recovery) and claim it again.\n\nCertificate fingerprint (SHA-256): `{fingerprint}`",
+        "data": {
+          "token": "Credential"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect hub {hub_id}",
+        "description": "The hub rejected Home Assistant's credential or presented a different certificate. Continue to check the hub again."
+      },
+      "certificate_changed": {
+        "title": "Hub {hub_id} certificate changed",
+        "description": "The hub now presents a different TLS certificate. This is expected only after its API storage was erased. If you did not reset the hub, another device may be impersonating it: cancel.\n\nPreviously trusted: `{old}`\n\nNow presented: `{new}`\n\nContinue only if the new fingerprint matches the one in the hub's serial log."
+      }
+    },
+    "error": {
+      "certificate_changed": "The hub's certificate changed during setup. Start again.",
+      "cannot_connect": "Cannot connect to the hub.",
+      "invalid_auth": "The hub rejected the credential.",
+      "hub_busy": "Another client is connected to the hub. Disconnect it and try again.",
+      "unsupported_api": "This hub uses an unsupported API version.",
+      "wrong_hub": "A different Server Buddy hub answered at this address."
+    },
+    "abort": {
+      "already_configured": "This hub is already configured.",
+      "not_supported": "This device is not a supported Server Buddy hub.",
+      "cannot_connect": "Cannot connect to the hub.",
+      "unsupported_api": "This hub uses an unsupported API version.",
+      "wrong_hub": "A different Server Buddy hub answered at this address.",
+      "certificate_changed": "The hub's certificate changed during setup. Start again.",
+      "reauth_successful": "Reconnected successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Manage nodes",
+        "menu_options": {
+          "add_node": "Add a new node",
+          "pair_node": "Pair or re-pair a node",
+          "remove_node": "Remove a node"
+        }
+      },
+      "add_node": {
+        "title": "Add a node",
+        "description": "The hub creates a node slot and a one-time node key, then opens a pairing window."
+      },
+      "node_key": {
+        "title": "Node key for slot {slot}",
+        "description": "Put this key in the node's ESPHome secrets.yaml. It is shown only once and is not stored in Home Assistant:\n\n`{key}`\n\nThe pairing window stays open for {seconds} seconds; use \"Pair or re-pair a node\" to reopen it."
+      },
+      "pair_node": {
+        "title": "Pair a node",
+        "description": "Opens a pairing window for the selected node only.",
+        "data": {
+          "node": "Node"
+        }
+      },
+      "remove_node": {
+        "title": "Remove a node",
+        "description": "Deletes the node and its key from the hub. The node must be re-added and reflashed to rejoin.",
+        "data": {
+          "node": "Node"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The hub is not connected.",
+      "hub_full": "The hub already has the maximum of 17 nodes.",
+      "request_failed": "The hub rejected the request."
+    },
+    "abort": {
+      "not_loaded": "The hub must be connected to manage nodes.",
+      "no_nodes": "The hub has no nodes.",
+      "pairing_started": "Pairing window opened. Power on or reset the node now.",
+      "node_removed": "The node was removed from the hub."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      }
+    }
+  },
+  "issues": {
+    "unsupported_api": {
+      "title": "Unsupported Server Buddy hub API",
+      "description": "Hub {hub_id} reports API {api}, but this integration supports {supported}. Update the integration or the hub firmware so they match."
+    }
+  }
+}

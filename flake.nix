@@ -20,6 +20,11 @@
       url = "github:espressif/esp-wifi-remote/wifi_remote-v1.6.5";
       flake = false;
     };
+    # Must match nixpkgs' home-assistant; provides hassfest for the integration check.
+    ha-core = {
+      url = "github:home-assistant/core/2026.5.4";
+      flake = false;
+    };
     esp-mdns = {
       url = "github:espressif/esp-protocols/mdns-v1.13.1";
       flake = false;
@@ -35,6 +40,7 @@
       esp-hosted-v2,
       esp-wifi-remote,
       esp-mdns,
+      ha-core,
     }:
     let
       systems = [
@@ -66,6 +72,7 @@
               haPy.pytest
               haPy.pytest-asyncio
               haPy.mypy
+              haPy.tqdm # hassfest
             ];
             ignoreCollisions = true;
           };
@@ -77,7 +84,7 @@
                 (
                   tool:
                   pkgs.writeShellScriptBin "ha-${tool}" ''
-                    exec ${haPython}/bin/python -m ${tool} "$@"
+                    exec env -u PYTHONPATH -u PYTHONHOME ${haPython}/bin/python -m ${tool} "$@"
                   ''
                 )
                 [
@@ -85,7 +92,10 @@
                   "mypy"
                 ]
               ++ [
-                (pkgs.writeShellScriptBin "ha-python" ''exec ${haPython}/bin/python "$@"'')
+                # IDF's shell exports a Python 3.13 PYTHONPATH; keep HA isolated.
+                (pkgs.writeShellScriptBin "ha-python" ''
+                  exec env -u PYTHONPATH -u PYTHONHOME ${haPython}/bin/python "$@"
+                '')
               ];
           };
 
@@ -233,6 +243,40 @@
             touch $out
           '';
 
+          # ---- Home Assistant integration: lint, strict types, tests against a TLS fake hub
+          haSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./custom_components
+              ./tests/ha
+              ./hacs.json
+              ./ruff.toml
+            ];
+          };
+          haRuff = "--no-cache";
+          ha-integration =
+            pkgs.runCommand "ha-integration"
+              {
+                nativeBuildInputs = [
+                  haPython
+                  pkgs.ruff
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                cp -r ${haSrc} src && chmod -R +w src && cd src
+                ruff check ${haRuff} custom_components tests/ha
+                ruff format ${haRuff} --check custom_components tests/ha
+                python -m mypy --strict --python-version 3.14 --explicit-package-bases \
+                  --cache-dir $TMPDIR/mypy custom_components
+                (cd tests/ha && python -m pytest -q -p no:cacheprovider)
+                # hassfest from the pinned HA core (manifest, translations, config flow, ...)
+                integration=$PWD/custom_components/server_buddy
+                cp -r ${ha-core} $TMPDIR/core && chmod -R +w $TMPDIR/core
+                (cd $TMPDIR/core && python -m script.hassfest --integration-path "$integration")
+                touch $out
+              '';
+
           # ---- protocol v1 host tests
           protocolSrc = lib.fileset.toSource {
             root = ./.;
@@ -347,6 +391,7 @@
               protocol-fuzz
               hub-c
               api-c
+              ha-integration
               ;
 
             nix-format = pkgs.runCommand "nix-format" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''

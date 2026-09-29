@@ -1,0 +1,14 @@
+{
+  "domain": "server_buddy",
+  "name": "Server Buddy",
+  "codeowners": ["@aaryannemade"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/aaryannemade/server-buddy",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/aaryannemade/server-buddy/issues",
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": ["_server-buddy._tcp.local."]
+}

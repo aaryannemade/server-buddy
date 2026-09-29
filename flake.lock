@@ -109,6 +109,23 @@
         "type": "github"
       }
     },
+    "ha-core": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779470781,
+        "narHash": "sha256-Z5FUkljaWRr9tfBb6RXJCC86ZbyNkw0PvUcOl+bZ2cc=",
+        "owner": "home-assistant",
+        "repo": "core",
+        "rev": "0723d8d83ff121e732e76b5dffe1b6648c69d596",
+        "type": "github"
+      },
+      "original": {
+        "owner": "home-assistant",
+        "ref": "2026.5.4",
+        "repo": "core",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1767799921,
@@ -148,6 +165,7 @@
         "esp-hosted-v2": "esp-hosted-v2",
         "esp-mdns": "esp-mdns",
         "esp-wifi-remote": "esp-wifi-remote",
+        "ha-core": "ha-core",
         "nixpkgs": "nixpkgs_2"
       }
     },

@@ -109,6 +109,10 @@ entity_count × {
   field indexes this list); empty otherwise.
 - A changed `schema_hash` replaces the node's entity set. Entities that
   disappear are marked unavailable, and HA removes them (see Phase 6).
+- Home Assistant identifies an entity by `(entity, object_id)`. Keep both stable
+  across firmware updates: changing either creates a new HA entity (and loses
+  the old one's history and customisations). Never reuse an `entity` number for
+  a different meaning.
 
 ## Reliability
 
