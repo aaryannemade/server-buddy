@@ -12,6 +12,15 @@
 esphome:
   name: xiao-logger-hat-smoke
   friendly_name: XIAO Logger HAT Smoke Test
+  on_boot:
+    # The GPIO output is set up at 800. Run before I2C sensors (600), then
+    # block setup for 50 ms so SHT40/BH1750 VDD settles before probing.
+    # An automation `delay:` yields; it does NOT hold up sensor setup.
+    - priority: 700
+      then:
+        - output.turn_on: logger_hat_power
+        - lambda: 'delay(50);'
+        - logger.log: "Logger HAT rail powered (GPIO10), sensors settled"
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -31,21 +40,22 @@ api:
 ota:
   - platform: esphome
 
-switch:
+output:
   - platform: gpio
     id: logger_hat_power
-    name: Logger HAT Sensor Power
-    entity_category: diagnostic # temporary: expose power control to isolate I2C failures
     pin: GPIO10 # XIAO D10: enables Logger HAT sensors; no battery divider used
-    restore_mode: ALWAYS_ON # assert during hardware setup, before I2C devices initialise
 
 i2c:
+  id: hat_i2c
   sda: GPIO6 # XIAO D4
   scl: GPIO7 # XIAO D5
   scan: true
 
 sensor:
   - platform: sht4x
+    id: sht40
+    i2c_id: hat_i2c
+    address: 0x44
     temperature:
       name: Temperature
       id: logger_temperature
@@ -55,6 +65,8 @@ sensor:
     update_interval: 30s
 
   - platform: bh1750
+    i2c_id: hat_i2c
+    address: 0x23
     name: Illuminance
     id: logger_illuminance
     update_interval: 30s
