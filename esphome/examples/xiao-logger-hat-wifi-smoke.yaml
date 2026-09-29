@@ -12,11 +12,6 @@
 esphome:
   name: xiao-logger-hat-smoke
   friendly_name: XIAO Logger HAT Smoke Test
-  on_boot:
-    priority: 600
-    then:
-      - output.turn_on: logger_hat_power
-      - delay: 200ms
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -36,10 +31,13 @@ api:
 ota:
   - platform: esphome
 
-output:
+switch:
   - platform: gpio
     id: logger_hat_power
+    name: Logger HAT Sensor Power
+    internal: true
     pin: GPIO10 # XIAO D10: enables Logger HAT sensors; no battery divider used
+    restore_mode: ALWAYS_ON # assert during hardware setup, before I2C devices initialise
 
 i2c:
   sda: GPIO6 # XIAO D4
