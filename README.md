@@ -46,3 +46,7 @@ as `server_buddy_pairing` and `server_buddy_node_error` bus events.
 If the hub's certificate changes (for example after its API storage is
 erased), Home Assistant asks for re-authentication and shows the old and new
 fingerprints; only confirm if the new one matches the hub's serial log.
+
+## License
+
+Server Buddy is licensed under the [GNU General Public License v3.0](LICENSE).
