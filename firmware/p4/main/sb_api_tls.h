@@ -28,6 +28,9 @@ size_t sb_api_tls_cert_pem_len(const sb_api_tls_t *tls);
 const uint8_t *sb_api_tls_private_key_pem(const sb_api_tls_t *tls);
 size_t sb_api_tls_private_key_pem_len(const sb_api_tls_t *tls);
 
+// SHA-256 of the DER certificate, the value clients pin (public, safe to log).
+esp_err_t sb_api_tls_fingerprint(const sb_api_tls_t *tls, uint8_t out[32]);
+
 #ifdef __cplusplus
 }
 #endif

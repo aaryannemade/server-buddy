@@ -301,6 +301,21 @@ esp_err_t sb_api_tls_init(sb_api_tls_t *tls, nvs_handle_t nvs, const char *hub_i
     return err;
 }
 
+esp_err_t sb_api_tls_fingerprint(const sb_api_tls_t *tls, uint8_t out[32])
+{
+    const uint8_t *pem = sb_api_tls_cert_pem(tls);
+    size_t len = sb_api_tls_cert_pem_len(tls);
+    if (!pem || !out) return ESP_ERR_INVALID_STATE;
+    mbedtls_x509_crt cert;
+    mbedtls_x509_crt_init(&cert);
+    int ret = mbedtls_x509_crt_parse(&cert, pem, len);
+    if (ret == 0)
+        ret = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), cert.raw.p, cert.raw.len,
+                         out);
+    mbedtls_x509_crt_free(&cert);
+    return ret == 0 ? ESP_OK : ESP_FAIL;
+}
+
 void sb_api_tls_free(sb_api_tls_t *tls)
 {
     if (!tls) return;

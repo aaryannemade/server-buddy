@@ -844,7 +844,12 @@ static void live_work(void *arg)
                     session->stream_seq = response->stream.latest_seq;
                 }
             }
-            if (err != ESP_OK) clear_ws_session(session);
+            if (err != ESP_OK) {
+                // Close rather than leave a silent, unauthenticated socket; the client
+                // reconnects and resumes from its last sequence.
+                clear_ws_session(session);
+                httpd_sess_trigger_close(server, fd);
+            }
         }
         free(response);
     } else if (session && (!server || session->server != server || !ws_session_current(session))) {
@@ -987,6 +992,13 @@ esp_err_t sb_api_start(const char *hub_id, uint32_t hub_boot)
     ESP_RETURN_ON_ERROR(load_credential(), TAG, "load API credential");
     ESP_RETURN_ON_ERROR(sb_api_tls_init(&s_api.tls, s_api.nvs, s_api.hub_id), TAG,
                         "load API TLS identity");
+    uint8_t fp[32];
+    if (sb_api_tls_fingerprint(&s_api.tls, fp) == ESP_OK) {
+        char hex[3 * sizeof fp];
+        for (size_t i = 0; i < sizeof fp; i++)
+            snprintf(hex + 3 * i, 4, "%02X%s", fp[i], i + 1 < sizeof fp ? ":" : "");
+        ESP_LOGI(TAG, "TLS certificate SHA-256 %s", hex);
+    }
     s_api.ip_queue = xQueueCreate(1, sizeof(api_ip_event_t));
     s_api.lock = xSemaphoreCreateMutex();
     if (!s_api.ip_queue || !s_api.lock) return ESP_ERR_NO_MEM;
