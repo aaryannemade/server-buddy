@@ -402,19 +402,22 @@
               esphome config $TMPDIR/config/node.yaml >/dev/null
 
               cp ${./esphome/examples/xiao-logger-hat-espnow.yaml} $TMPDIR/config/espnow.yaml
-              chmod +w $TMPDIR/config/espnow.yaml $TMPDIR/config/secrets.yaml
+              cp ${./esphome/examples/xiao-logger-hat-espnow-battery.yaml} $TMPDIR/config/battery.yaml
+              chmod +w $TMPDIR/config/espnow.yaml $TMPDIR/config/battery.yaml $TMPDIR/config/secrets.yaml
               python - <<'PY'
               import os
               from pathlib import Path
-              p = Path(os.environ["TMPDIR"]) / "config/espnow.yaml"
-              text = p.read_text()
               remote = "      type: git\n      url: https://github.com/aaryannemade/server-buddy.git\n      ref: main\n      path: esphome/components"
               local = "      type: local\n      path: ${./.}/esphome/components"
-              assert remote in text
-              p.write_text(text.replace(remote, local))
+              for name in ("espnow.yaml", "battery.yaml"):
+                  p = Path(os.environ["TMPDIR"]) / "config" / name
+                  text = p.read_text()
+                  assert remote in text
+                  p.write_text(text.replace(remote, local))
               (Path(os.environ["TMPDIR"]) / "config/secrets.yaml").write_text('server_buddy_node_key: "AAAAAAAAAAAAAAAAAAAAAA"\n')
               PY
               esphome config $TMPDIR/config/espnow.yaml >/dev/null
+              esphome config $TMPDIR/config/battery.yaml >/dev/null
               # The component copies the canonical C codec and crypto, never a fork.
               for name in sb_protocol.c sb_describe.c sb_crypto.c; do
                 cmp ${./.}/esphome/components/server_buddy/$name ${./.}/firmware/components/sb_protocol/$name

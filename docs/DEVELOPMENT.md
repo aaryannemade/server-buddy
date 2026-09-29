@@ -115,3 +115,19 @@ build with a dummy key passed on ESPHome 2026.5.1 and 2026.7.4. The updated
 2026.7.4 firmware restored the existing encrypted session after a USB reset;
 the hub ACKed all six states, and HA displayed the new diagnostic values and
 Boot Button transitions.
+
+### Battery-sensing bench variant
+
+`esphome/examples/xiao-logger-hat-espnow-battery.yaml` keeps the existing
+node's name, key, entity numbers and channel while adding Battery Voltage and
+an approximate Battery Level. The Logger HAT (SKU 114993446) has a 1:2 divider
+from its BAT+ input to XIAO D1/GPIO3 (ADC1), powered alongside the I²C sensors
+from GPIO10. Connect a compatible single-cell LiPo to the HAT's BAT+/GND pads
+with the correct polarity; an empty BAT+ pad reads as 0/noise rather than a
+useful battery measurement. Compare the voltage with a multimeter to calibrate
+the divider/ADC; the percentage is only a rough voltage-based estimate.
+
+This config stays awake to make the battery ADC and reporting easy to verify.
+Deep sleep needs an ACK-gated sleep path in `server_buddy` so it cannot interrupt
+pairing, DESCRIBE, a multi-frame STATE or its final application ACK. The HAT's
+divider also needs sleep-current measurement before selecting a wake interval.
