@@ -394,6 +394,15 @@
               ha-integration
               ;
 
+            esphome-yaml = pkgs.runCommand "esphome-yaml" { nativeBuildInputs = [ pkgs.esphome ]; } ''
+              export HOME=$TMPDIR
+              mkdir -p $TMPDIR/config
+              cp ${./esphome/examples/xiao-logger-hat-wifi-smoke.yaml} $TMPDIR/config/node.yaml
+              cp ${./esphome/examples/secrets.example.yaml} $TMPDIR/config/secrets.yaml
+              esphome config $TMPDIR/config/node.yaml >/dev/null
+              touch $out
+            '';
+
             nix-format = pkgs.runCommand "nix-format" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''
               nixfmt --check ${./flake.nix}
               touch $out

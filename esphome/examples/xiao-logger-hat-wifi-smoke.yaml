@@ -1,0 +1,62 @@
+# Temporary USB-powered hardware smoke test for the Seeed XIAO ESP32-C3 and
+# XIAO Logger HAT (Seeed SKU 114993446).
+#
+# This uses normal ESPHome Wi-Fi + HA API. It does NOT speak Server Buddy's
+# ESP-NOW protocol or enroll in the Server Buddy hub. Use it to verify the
+# SHT40/BH1750, GPIO wiring, and 30-second updates before the Phase 7
+# Server Buddy node transport is implemented.
+#
+# Copy this file into ESPHome Builder. It expects wifi_ssid and wifi_password
+# in the Builder's secrets.yaml; do not put real credentials into this repo.
+
+esphome:
+  name: xiao-logger-hat-smoke
+  friendly_name: XIAO Logger HAT Smoke Test
+  on_boot:
+    priority: 600
+    then:
+      - output.turn_on: logger_hat_power
+      - delay: 200ms
+
+esp32:
+  board: seeed_xiao_esp32c3
+  framework:
+    type: esp-idf
+
+logger:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+
+# ESPHome network OTA is only for this temporary Wi-Fi test. Once the node
+# uses ESP-NOW without Wi-Fi, updates will require wired USB flashing.
+ota:
+  - platform: esphome
+
+output:
+  - platform: gpio
+    id: logger_hat_power
+    pin: GPIO10 # XIAO D10: enables Logger HAT sensors; no battery divider used
+
+i2c:
+  sda: GPIO6 # XIAO D4
+  scl: GPIO7 # XIAO D5
+  scan: true
+
+sensor:
+  - platform: sht4x
+    temperature:
+      name: Temperature
+      id: logger_temperature
+    humidity:
+      name: Humidity
+      id: logger_humidity
+    update_interval: 30s
+
+  - platform: bh1750
+    name: Illuminance
+    id: logger_illuminance
+    update_interval: 30s
