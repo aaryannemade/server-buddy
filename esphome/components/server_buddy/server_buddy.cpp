@@ -318,7 +318,9 @@ void ServerBuddyNode::handle_ack_(const uint8_t *data, size_t len, const sb_fram
   } else if (kind == Pending::DESCRIBE) {
     if (++this->describe_index_ >= this->describe_count_) this->need_describe_ = false;
   } else if (kind == Pending::BOOT_EVENT) {
-    this->boot_event_acked_ = true;
+    // NEED_DESCRIBE means the hub could not deliver the event yet. Resend
+    // the original (origin_boot, event_no) after installing the schema.
+    if (f.u.ack.status != SB_ACK_NEED_DESCRIBE) this->boot_event_acked_ = true;
   } else if (kind == Pending::STATE) {
     this->next_report_ms_ = millis() + REPORT_MS;
     ESP_LOGD(TAG, "full sensor state ACKed");
