@@ -77,7 +77,12 @@ provide an ESPHome API/OTA, or publish a battery voltage (USB-powered test).
    `server_buddy_node_key`; see
    `esphome/examples/server-buddy-node-secrets.example.yaml`. Never commit it.
 3. Paste `xiao-logger-hat-espnow.yaml` into the Builder as a **new device**.
-   Build, then flash the XIAO via USB/WebSerial. On this ESP32-C3, if WebSerial
+   Build, then flash the XIAO via USB/WebSerial. **Pick the port named
+   "USB JTAG/serial debug unit" (Espressif).** "USB Single Serial" is the P4
+   hub; Linux `ttyACM` numbers swap when boards are replugged, and the web
+   flasher's erase option wipes the hub's `hub_nvs` (TLS identity, HA
+   credential, node registry). Unplugging the P4's USB while flashing nodes
+   avoids the mix-up. On this ESP32-C3, if WebSerial
    cannot enter download mode, hold BOOT, tap RESET and release BOOT before
    reconnecting. USB flashing is required; Wi-Fi OTA is unavailable afterward.
 4. The hub's pairing window is 120 s. If it expires while building/flashing,
