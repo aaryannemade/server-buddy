@@ -7,6 +7,7 @@
 # server_buddy_node_key (see server-buddy-node-secrets.example.yaml). The hub
 # has a 120 s targeted pairing window. If it expires: Configure -> Pair node.
 # No wifi:, api:, ota: or battery gauge; the XIAO stays awake on USB power.
+# Sensors are sent every report_interval; binary/text sensors also on change.
 
 external_components:
   - source:
@@ -65,6 +66,31 @@ sensor:
     id: logger_illuminance
     update_interval: 30s
 
+  - platform: internal_temperature
+    name: Chip Temperature
+    id: chip_temperature
+    entity_category: diagnostic
+    update_interval: 30s
+
+binary_sensor:
+  # The XIAO's BOOT button, to see change-driven reports: press it and HA
+  # updates within a second instead of waiting for the 30 s report.
+  - platform: gpio
+    name: Boot Button
+    id: boot_button
+    pin:
+      number: GPIO9
+      mode: INPUT_PULLUP
+      inverted: true
+      ignore_strapping_warning: true # only sampled at reset; safe as an input after boot
+
+text_sensor:
+  - platform: version
+    name: ESPHome Version
+    id: esphome_version
+    hide_timestamp: true
+    entity_category: diagnostic
+
 # ESPHome's espnow component stays disconnected from Wi-Fi on channel 1.
 # This is the C6 hub radio MAC, NOT the P4 Ethernet MAC or your router's
 # Wi-Fi channel 6. The hub uses Ethernet and fixes its ESP-NOW radio at 1.
@@ -78,6 +104,22 @@ server_buddy:
   espnow_id: espnow_radio
   hub_mac: 14:C1:9F:01:DD:18
   node_key: !secret server_buddy_node_key
-  temperature_id: logger_temperature
-  humidity_id: logger_humidity
-  illuminance_id: logger_illuminance
+  report_interval: 30s
+  boot_event_number: 4 # keep the existing HA boot event ID
+  # Any ESPHome sensor / binary_sensor / text_sensor can be exported by ID.
+  # Name, unit, device class, state class, precision and entity_category are
+  # taken from its own definition. `number` is optional: it fixes the wire ID
+  # (here, to keep the entities created before this list existed); otherwise
+  # one is derived from the entity's name, so keep names stable.
+  sensors:
+    - id: logger_temperature
+      number: 1
+    - id: logger_humidity
+      number: 2
+    - id: logger_illuminance
+      number: 3
+    - chip_temperature
+  binary_sensors:
+    - boot_button
+  text_sensors:
+    - esphome_version

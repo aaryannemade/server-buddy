@@ -17,7 +17,8 @@ namespace esphome::server_buddy {
 
 static const char *const TAG = "server_buddy";
 static constexpr uint8_t BROADCAST[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-static constexpr uint32_t REPORT_MS = 30000;
+static constexpr uint32_t STATE_RETRY_MS = 5000;  // back-off while the hub is unreachable
+static constexpr uint32_t HELLO_RETRY_MS = 30000;  // cap: long report intervals must not delay recovery
 static constexpr uint32_t ACK_TIMEOUT_MS = 500;
 static constexpr uint8_t MAX_ATTEMPTS = 3;
 
@@ -90,30 +91,74 @@ bool ServerBuddyNode::install_peer_(bool encrypted) {
   return esp_now_mod_peer(&peer) == ESP_OK;
 }
 
+void ServerBuddyNode::add_entity_(uint8_t platform, void *source, uint8_t number, const char *object_id,
+                                  const char *name, const char *unit, const char *device_class,
+                                  uint8_t state_class, int8_t accuracy, uint8_t flags) {
+  this->entities_.push_back(
+      {platform, number, object_id, name, unit, device_class, state_class, accuracy, flags, source, true, 0});
+}
+
+void ServerBuddyNode::add_sensor(sensor::Sensor *s, uint8_t number, const char *object_id, const char *name,
+                                 const char *unit, const char *device_class, uint8_t state_class,
+                                 int8_t accuracy, uint8_t flags) {
+  // Sensors are sampled at the report interval; they do not trigger reports.
+  this->add_entity_(1, s, number, object_id, name, unit, device_class, state_class, accuracy, flags);
+}
+
+void ServerBuddyNode::add_binary_sensor(binary_sensor::BinarySensor *s, uint8_t number, const char *object_id,
+                                        const char *name, const char *unit, const char *device_class,
+                                        uint8_t state_class, int8_t accuracy, uint8_t flags) {
+  size_t index = this->entities_.size();
+  this->add_entity_(2, s, number, object_id, name, unit, device_class, state_class, accuracy, flags);
+  // Doors, buttons and the like are reported as soon as they change.
+  s->add_on_state_callback([this, index](bool) { this->entities_[index].dirty = true; });
+}
+
+void ServerBuddyNode::add_text_sensor(text_sensor::TextSensor *s, uint8_t number, const char *object_id,
+                                      const char *name, const char *unit, const char *device_class,
+                                      uint8_t state_class, int8_t accuracy, uint8_t flags) {
+  size_t index = this->entities_.size();
+  this->add_entity_(3, s, number, object_id, name, unit, device_class, state_class, accuracy, flags);
+  // TextSensor fires on every publish; only a changed value is worth a frame.
+  s->add_on_state_callback([this, index](const std::string &value) {
+    uint32_t hash = 2166136261u;  // FNV-1a
+    for (char c : value) hash = (hash ^ static_cast<uint8_t>(c)) * 16777619u;
+    Entity &entity = this->entities_[index];
+    if (hash != entity.last) entity.dirty = true;
+    entity.last = hash;
+  });
+}
+
 void ServerBuddyNode::build_schema_() {
   sb_schema_t schema{};
-  schema.node_name = text("XIAO Logger HAT");
-  schema.model = text("XIAO ESP32-C3 + Logger HAT");
-  schema.fw_version = text("server-buddy-espnow-v1");
-  schema.n = 4;
-  auto add = [&](uint8_t idx, uint8_t platform, uint8_t type, const char *object_id, const char *name,
-                 const char *unit, const char *device_class, const char *extra) {
-    sb_entity_t &e = schema.e[idx];
-    e.entity = idx + 1;
-    e.platform = platform;
-    e.value_type = type;
-    e.state_class = platform == 1 ? 1 : 0;  // measurement
-    e.accuracy = platform == 1 ? 1 : 0;
-    e.object_id = text(object_id);
-    e.name = text(name);
-    e.unit = text(unit);
-    e.device_class = text(device_class);
-    e.extra = text(extra);
-  };
-  add(0, 1, SB_V_F32, "temperature", "Temperature", "°C", "temperature", "");
-  add(1, 1, SB_V_F32, "humidity", "Humidity", "%", "humidity", "");
-  add(2, 1, SB_V_F32, "illuminance", "Illuminance", "lx", "illuminance", "");
-  add(3, 4, SB_V_ENUM, "boot", "Boot", "", "", "boot");
+  schema.node_name = text(this->node_name_);
+  schema.model = text(this->model_);
+  schema.fw_version = text(this->fw_version_);
+  schema.n = 0;
+  static const uint8_t VALUE_TYPES[] = {0, SB_V_F32, SB_V_BOOL, SB_V_STR};
+  for (const auto &entity : this->entities_) {
+    sb_entity_t &e = schema.e[schema.n++];
+    e.entity = entity.number;
+    e.platform = entity.platform;
+    e.value_type = VALUE_TYPES[entity.platform];
+    e.state_class = entity.state_class;
+    e.accuracy = entity.accuracy;
+    e.flags = entity.flags;
+    e.object_id = text(entity.object_id);
+    e.name = text(entity.name);
+    e.unit = text(entity.unit);
+    e.device_class = text(entity.device_class);
+    e.extra = text("");
+  }
+  sb_entity_t &boot = schema.e[schema.n++];
+  boot.entity = this->boot_number_;
+  boot.platform = 4;  // event
+  boot.value_type = SB_V_ENUM;
+  boot.accuracy = -1;
+  boot.object_id = text("boot");
+  boot.name = text("Boot");
+  boot.unit = boot.device_class = text("");
+  boot.extra = text("boot");
   if (sb_encode_schema(&schema, this->schema_blob_, sizeof this->schema_blob_, &this->schema_len_) != SB_OK ||
       !sb_schema_hash(this->schema_blob_, this->schema_len_, &this->schema_hash_)) {
     ESP_LOGE(TAG, "Cannot encode node schema");
@@ -126,8 +171,8 @@ void ServerBuddyNode::build_schema_() {
 }
 
 void ServerBuddyNode::setup() {
-  if (this->radio_ == nullptr || this->temperature_ == nullptr || this->humidity_ == nullptr ||
-      this->illuminance_ == nullptr || !sb_key_id(this->node_key_.data(), this->key_id_) ||
+  if (this->radio_ == nullptr || this->entities_.empty() || this->entities_.size() >= SB_MAX_ENTITIES ||
+      !sb_key_id(this->node_key_.data(), this->key_id_) ||
       esp_wifi_get_mac(WIFI_IF_STA, this->node_mac_) != ESP_OK ||
       esp_now_set_pmk(SB_PMK) != ESP_OK || nvs_flash_init() != ESP_OK || !this->increment_boot_()) {
     ESP_LOGE(TAG, "Radio, crypto or boot-counter setup failed");
@@ -145,15 +190,20 @@ void ServerBuddyNode::setup() {
   }
   this->origin_boot_ = this->boot_;
   this->next_report_ms_ = millis();
-  ESP_LOGI(TAG, "Channel=%u, %s; reporting every 30 seconds", this->radio_->get_wifi_channel(),
-           this->paired_ ? "restored encrypted session" : "waiting for targeted pairing");
+  ESP_LOGI(TAG, "Channel=%u, %s; %u entities, full report every %us", this->radio_->get_wifi_channel(),
+           this->paired_ ? "restored encrypted session" : "waiting for targeted pairing",
+           static_cast<unsigned>(this->entities_.size()), static_cast<unsigned>(this->report_ms_ / 1000));
 }
 
 void ServerBuddyNode::dump_config() {
   ESP_LOGCONFIG(TAG, "Server Buddy ESP-NOW node (protocol v%u)", SB_VERSION);
   ESP_LOGCONFIG(TAG, "  Hub MAC: %02x:%02x:%02x:%02x:%02x:%02x", this->hub_mac_[0], this->hub_mac_[1],
                 this->hub_mac_[2], this->hub_mac_[3], this->hub_mac_[4], this->hub_mac_[5]);
-  ESP_LOGCONFIG(TAG, "  Channel: %u, report interval: 30s", this->radio_->get_wifi_channel());
+  ESP_LOGCONFIG(TAG, "  Channel: %u, report interval: %us", this->radio_->get_wifi_channel(),
+                static_cast<unsigned>(this->report_ms_ / 1000));
+  static const char *const KINDS[] = {"", "sensor", "binary_sensor", "text_sensor"};
+  for (const auto &entity : this->entities_)
+    ESP_LOGCONFIG(TAG, "  #%u %s '%s' (%s)", entity.number, KINDS[entity.platform], entity.name, entity.object_id);
 }
 
 void ServerBuddyNode::send_pair_request_() {
@@ -234,7 +284,7 @@ void ServerBuddyNode::send_hello_() {
   sb_frame_t hello{};
   hello.type = SB_MSG_HELLO;
   hello.u.hello.schema_hash = this->schema_hash_;
-  hello.u.hello.interval = REPORT_MS / 1000;
+  hello.u.hello.interval = this->report_ms_ / 1000;  // hub availability timeout = 3x
   hello.u.hello.reason = 1;  // power on
   if (!this->begin_frame_(hello, Pending::HELLO)) ESP_LOGE(TAG, "HELLO encode failed");
 }
@@ -257,7 +307,7 @@ void ServerBuddyNode::send_describe_() {
 void ServerBuddyNode::send_boot_event_() {
   sb_frame_t event{};
   event.type = SB_MSG_EVENT;
-  event.u.event.entity = 4;
+  event.u.event.entity = this->boot_number_;
   event.u.event.etype = 0;
   event.u.event.oboot = this->origin_boot_;
   event.u.event.evno = 1;
@@ -265,18 +315,75 @@ void ServerBuddyNode::send_boot_event_() {
   if (!this->begin_frame_(event, Pending::BOOT_EVENT)) ESP_LOGE(TAG, "boot EVENT encode failed");
 }
 
-void ServerBuddyNode::send_state_() {
+// Current value of an entity; NONE when unknown. Returns the STATE entry size
+// (entity byte + VALUE). `text` backs STR values until the frame is encoded.
+size_t ServerBuddyNode::value_(const Entity &entity, sb_value_t &value, char *text, size_t cap) const {
+  value = {};
+  value.type = SB_V_NONE;
+  if (entity.platform == 1) {
+    auto *s = static_cast<sensor::Sensor *>(entity.source);
+    if (s->has_state() && std::isfinite(s->state)) {
+      value.type = SB_V_F32;
+      value.f = s->state;
+      return 1 + 5;
+    }
+  } else if (entity.platform == 2) {
+    auto *s = static_cast<binary_sensor::BinarySensor *>(entity.source);
+    if (s->has_state()) {
+      value.type = SB_V_BOOL;
+      value.b = s->state;
+      return 1 + 2;
+    }
+  } else if (entity.platform == 3) {
+    auto *s = static_cast<text_sensor::TextSensor *>(entity.source);
+    if (s->has_state()) {
+      // Protocol strings are <= 64 bytes of strict UTF-8 without NUL: trim to
+      // a character boundary; anything still invalid is reported as unknown.
+      size_t len = std::min(s->state.size(), std::min(cap - 1, static_cast<size_t>(SB_MAX_STR)));
+      memcpy(text, s->state.data(), len);
+      while (len > 0 && !sb_utf8_valid(reinterpret_cast<const uint8_t *>(text), len) &&
+             (static_cast<uint8_t>(text[len - 1]) & 0x80))
+        len--;
+      if (sb_utf8_valid(reinterpret_cast<const uint8_t *>(text), len)) {
+        value.type = SB_V_STR;
+        value.s = {reinterpret_cast<const uint8_t *>(text), static_cast<uint8_t>(len)};
+        return 1 + 2 + len;
+      }
+    }
+  }
+  return 1 + 1;
+}
+
+// Send the next frame's worth of changed entities. Returns false if none are due.
+bool ServerBuddyNode::send_state_batch_() {
+  static char texts[SB_MAX_STATE_ENTRIES][SB_MAX_STR + 1];
   sb_frame_t state{};
   state.type = SB_MSG_STATE;
-  state.flags = SB_FLAG_FULL_STATE;
-  state.u.state.n = 3;
-  const float samples[] = {this->temperature_->state, this->humidity_->state, this->illuminance_->state};
-  for (uint8_t i = 0; i < 3; i++) {
-    state.u.state.e[i].entity = i + 1;
-    state.u.state.e[i].value.type = std::isfinite(samples[i]) ? SB_V_F32 : SB_V_NONE;
-    if (state.u.state.e[i].value.type == SB_V_F32) state.u.state.e[i].value.f = samples[i];
+  size_t payload = 1;  // entry count
+  this->batch_.clear();
+  for (size_t i = 0; i < this->entities_.size() && state.u.state.n < SB_MAX_STATE_ENTRIES; i++) {
+    Entity &entity = this->entities_[i];
+    if (!entity.dirty) continue;
+    uint8_t slot = state.u.state.n;
+    size_t size = this->value_(entity, state.u.state.e[slot].value, texts[slot], sizeof texts[slot]);
+    if (payload + size > SB_MAX_PAYLOAD) continue;  // goes in the next frame; keep packing others
+    state.u.state.e[slot].entity = entity.number;
+    state.u.state.n++;
+    payload += size;
+    this->batch_.push_back(i);
   }
-  if (!this->begin_frame_(state, Pending::STATE)) ESP_LOGE(TAG, "STATE encode failed");
+  if (this->batch_.empty()) return false;
+  if (this->batch_.size() == this->entities_.size()) state.flags = SB_FLAG_FULL_STATE;
+  // Clear now: a change while the frame is in flight re-marks the entity.
+  for (uint8_t index : this->batch_) this->entities_[index].dirty = false;
+  if (!this->begin_frame_(state, Pending::STATE)) {
+    ESP_LOGE(TAG, "STATE encode failed");
+    for (uint8_t index : this->batch_) this->entities_[index].dirty = true;
+    this->backoff_ = true;
+    this->retry_after_ms_ = millis() + STATE_RETRY_MS;
+    return false;
+  }
+  return true;
 }
 
 void ServerBuddyNode::handle_ack_(const uint8_t *data, size_t len, const sb_frame_t &f) {
@@ -285,11 +392,14 @@ void ServerBuddyNode::handle_ack_(const uint8_t *data, size_t len, const sb_fram
       f.u.ack.aboot != this->pending_boot_ || f.u.ack.aseq != this->pending_seq_)
     return;
   if (f.u.ack.status == SB_ACK_NEW_BOOT) {
+    // Hub restarted: the frame was not processed. Re-announce and resend it all.
     this->pending_ = Pending::NONE;
     if (!this->increment_boot_()) this->mark_failed();
     this->hello_done_ = false;
     this->need_describe_ = false;
     this->describe_index_ = 0;
+    this->next_hello_ms_ = millis();  // a stale deadline could otherwise block HELLO
+    for (auto &entity : this->entities_) entity.dirty = true;
     return;
   }
   Pending kind = this->pending_;
@@ -298,6 +408,12 @@ void ServerBuddyNode::handle_ack_(const uint8_t *data, size_t len, const sb_fram
     ESP_LOGW(TAG, "hub rejected frame type=%u status=%u", static_cast<unsigned>(kind), f.u.ack.status);
     if (kind == Pending::HELLO) this->next_hello_ms_ = millis() + 1000;
     if (kind == Pending::DESCRIBE) this->last_send_ms_ = millis() + 1000;
+    // BUSY is transient: resend. MALFORMED would repeat forever: drop it.
+    if (kind == Pending::STATE && f.u.ack.status == SB_ACK_BUSY) {
+      for (uint8_t index : this->batch_) this->entities_[index].dirty = true;
+      this->backoff_ = true;
+      this->retry_after_ms_ = millis() + STATE_RETRY_MS;
+    }
     return;
   }
   if (kind == Pending::HELLO) {
@@ -322,12 +438,14 @@ void ServerBuddyNode::handle_ack_(const uint8_t *data, size_t len, const sb_fram
     // the original (origin_boot, event_no) after installing the schema.
     if (f.u.ack.status != SB_ACK_NEED_DESCRIBE) this->boot_event_acked_ = true;
   } else if (kind == Pending::STATE) {
-    this->next_report_ms_ = millis() + REPORT_MS;
-    ESP_LOGD(TAG, "full sensor state ACKed");
+    ESP_LOGD(TAG, "state ACKed (%u entities)", static_cast<unsigned>(this->batch_.size()));
   }
   if (f.u.ack.status == SB_ACK_NEED_DESCRIBE && kind != Pending::HELLO) {
+    // The hub lost our schema: re-announce, then resend everything.
     this->hello_done_ = false;
     this->need_describe_ = false;
+    this->next_hello_ms_ = millis();
+    for (auto &entity : this->entities_) entity.dirty = true;
   }
 }
 
@@ -350,13 +468,17 @@ void ServerBuddyNode::failed_frame_() {
   this->pending_ = Pending::NONE;
   if (kind == Pending::HELLO) {
     if (this->pair_confirming_) this->forget_pending_pair_();
-    else this->next_hello_ms_ = millis() + REPORT_MS;
+    else this->next_hello_ms_ = millis() + std::min(this->report_ms_, HELLO_RETRY_MS);
   } else if (kind == Pending::STATE) {
-    this->next_report_ms_ = millis() + REPORT_MS;
+    // Hub unreachable: keep the values and retry later without flooding.
+    for (uint8_t index : this->batch_) this->entities_[index].dirty = true;
+    this->backoff_ = true;
+    this->retry_after_ms_ = millis() + STATE_RETRY_MS;
   } else if (kind == Pending::DESCRIBE) {
     this->last_send_ms_ = millis() + 1000;
   } else if (kind == Pending::BOOT_EVENT) {
-    this->next_report_ms_ = millis() + REPORT_MS;
+    this->backoff_ = true;
+    this->retry_after_ms_ = millis() + STATE_RETRY_MS;
   }
 }
 
@@ -386,11 +508,21 @@ void ServerBuddyNode::loop() {
     if (static_cast<int32_t>(now - this->last_send_ms_) >= 0) this->send_describe_();
     return;
   }
+  if (this->backoff_) {
+    if (static_cast<int32_t>(now - this->retry_after_ms_) < 0) return;
+    this->backoff_ = false;
+  }
   if (!this->boot_event_acked_) {
-    if (static_cast<int32_t>(now - this->next_report_ms_) >= 0) this->send_boot_event_();
+    this->send_boot_event_();
     return;
   }
-  if (static_cast<int32_t>(now - this->next_report_ms_) >= 0) this->send_state_();
+  if (static_cast<int32_t>(now - this->next_report_ms_) >= 0) {
+    // Periodic full report: sensors are sampled here; it also refreshes the
+    // hub's availability timer (3 x report interval).
+    for (auto &entity : this->entities_) entity.dirty = true;
+    this->next_report_ms_ = now + this->report_ms_;
+  }
+  this->send_state_batch_();  // changed binary/text sensors go out immediately
 }
 
 }  // namespace esphome::server_buddy

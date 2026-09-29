@@ -72,11 +72,13 @@ provide an ESPHome API/OTA, or publish a battery voltage (USB-powered test).
 
 1. Push the commit containing the external component so ESPHome Builder's
    `external_components` git source can fetch it.
-2. In HA's **Server Buddy** integration, choose **Configure → Add a new node**.
-   Add the one-time 22-character key to Builder's `secrets.yaml` as
-   `server_buddy_node_key`; see
+2. For a new node, choose **Configure → Add a new node** in HA's **Server
+   Buddy** integration. Add the one-time 22-character key to Builder's
+   `secrets.yaml` as `server_buddy_node_key`; see
    `esphome/examples/server-buddy-node-secrets.example.yaml`. Never commit it.
-3. Paste `xiao-logger-hat-espnow.yaml` into the Builder as a **new device**.
+   When updating an already paired node, retain its existing key and YAML name.
+3. Paste `xiao-logger-hat-espnow.yaml` into the Builder (or update the existing
+   device). Keep `refresh: 0s` so Builder fetches the latest component.
    Build, then flash the XIAO via USB/WebSerial. **Pick the port named
    "USB JTAG/serial debug unit" (Espressif).** "USB Single Serial" is the P4
    hub; Linux `ttyACM` numbers swap when boards are replugged, and the web
@@ -88,12 +90,26 @@ provide an ESPHome API/OTA, or publish a battery voltage (USB-powered test).
 4. The hub's pairing window is 120 s. If it expires while building/flashing,
    use **Configure → Pair or re-pair a node**, choose that slot, and reset the
    XIAO. It retries pairing every 500 ms while unpaired. After the first
-   authenticated HELLO, it publishes schema, one boot event and three sensor
-   values at 30-second intervals. If sensor measurements fail after a warm
-   reset, unplug/replug USB: the Logger HAT rail must power-cycle fully.
+   authenticated HELLO, it publishes its schema, a boot event, temperature,
+   humidity, illuminance, chip temperature, a BOOT-button binary sensor and
+   ESPHome version text. All states refresh every 30 seconds; binary and text
+   changes report immediately. Existing sensor entity numbers 1–3 and boot
+   event number 4 are pinned to preserve their HA identities. If sensor
+   measurements fail after a warm reset, unplug/replug USB: the Logger HAT
+   rail must power-cycle fully.
+
+The `server_buddy:` block accepts `sensors:`, `binary_sensors:` and
+`text_sensors:` lists of ESPHome IDs (`- my_id` or `- {id: my_id, number: 7}`).
+The component exports each entity's validated name, unit, device class, state
+class, accuracy and diagnostic category. Automatic entity numbers are derived
+from the object ID (which is derived from the name); keep names stable, or set
+explicit `number:` values when preserving existing HA entity IDs. The built-in
+boot event defaults to number 255; existing nodes can set
+`boot_event_number:` to their original number. Up to 31 entities can be exported
+alongside the boot event; a state report may span several acknowledged frames.
 
 The ESPHome build uses PlatformIO downloads and is not part of offline
 `nix flake check`; `esphome-yaml` validates the config locally and checks that
 the component's symlinks use the exact P4 protocol C source. A full ESP32-C3
-build with a dummy key was completed using ESPHome 2026.5.1. Real pairing and
-report delivery require flashing with a newly generated secret.
+build with a dummy key passed on ESPHome 2026.5.1 and 2026.7.4. Real delivery
+of the new entities still requires flashing the updated node firmware.
